@@ -21,15 +21,24 @@ public class Node {
     private int port;
     private boolean isIntroducer;
     private AtomicBoolean inGroup = new AtomicBoolean(false);
+    private AtomicBoolean electionAcked = new AtomicBoolean(false);
+    private AtomicBoolean inElection = new AtomicBoolean(false);
     private final long pingPeriod = 2000;
     private Thread receive;
+    //header for different msg types
     private final int ack = 20;
     private final int gossip = 10;
-    //header for different msg types
     private final int join = 0;
     private final int leave = 1;
+    private final int isAlive = 2;
+    private final int update = 3;
+    private final int elected = 4;
+    private final int election = 5;
     private final int gossipRound = 4; //need gossip 4 rounds to achieve overall infection
+    private final int electionPeriod = 200;
     private Instant lastGossipTime;
+    private String leader = "";
+
 
     public Node() throws UnknownHostException {
         this.hostName = util.getCurrentHostname();
@@ -42,8 +51,6 @@ public class Node {
     }
 
     private ConcurrentHashMap<String, String> memberList = new ConcurrentHashMap<>();
-    private final int isAlive = 2;
-    private final int update = 3;
     private Thread FD;
     private DatagramSocket ds;
     private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
@@ -54,6 +61,17 @@ public class Node {
             logger.info("id:{}  $$  ip:{}  $$  timestamp:{}   ", this.hostName, util.getIpFromHostname(this.hostName), this.memberList.get(this.hostName));
         } else {
             logger.info("join the group first");
+        }
+    }
+
+
+
+    public void printLeader() {
+        if (!this.leader.isEmpty()){
+            logger.info("current leader:{}", this.leader);
+        }
+        else{
+            logger.info("no leader selected");
         }
     }
 
@@ -100,11 +118,17 @@ public class Node {
                         case "2":
                             isAliveHandler(source);
                             break;
+                        case "5":
+                            electionHandler(content);
+                            break;
                         case "11":
                             gossipHandler(11, content, timestamp);
                             break;
                         case "13":
                             gossipHandler(13, content, timestamp);
+                            break;
+                        case "14":
+                            gossipHandler(14, content, timestamp);
                             break;
                         case "21":
                             ackHandler(21, source);
@@ -112,6 +136,8 @@ public class Node {
                         case "22":
                             ackHandler(22, source);
                             break;
+                        case "25":
+                            ackHandler(25, source);
                         default:
                             throw new RuntimeException("Invalid header");
                     }
@@ -163,6 +189,10 @@ public class Node {
                         if (this.ackList.get(host).equals("f")) {
                             this.memberList.remove(host);
                             logger.info("failure of <{}> detected at <{}>", host, Instant.now());
+                            logger.info("start leader election protocal");
+                            if(host.equals(this.leader)){
+                                election();
+                            }
                             needUpdate = true;
                         }
                     }
@@ -176,7 +206,7 @@ public class Node {
 
     public void join() throws InterruptedException {
         if (this.inGroup.get()) {
-            logger.warn("Already in the group");
+            logger.warn("already in the group");
         } else {
             if (this.receive == null) {
                 this.receive = new Thread(this.receiveWorker());
@@ -186,6 +216,7 @@ public class Node {
             }
             if (this.isIntroducer) {
                 this.memberList.put(this.hostName, Instant.now().toString());
+                this.leader = this.hostName;
                 logger.warn("introducer ready");
             } else {
                 while (this.memberList.isEmpty()) {
@@ -201,6 +232,7 @@ public class Node {
 
         }
     }
+
 
 
     public void leave() throws InterruptedException {
@@ -286,6 +318,7 @@ public class Node {
             if (!this.memberList.containsKey(source)) {
                 this.memberList.put(source, requestTime);
                 gossip(update + gossip, listToString(), Instant.now().toString(), this.gossipRound);
+                gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
             }
         } else {
             logger.warn("Only introducer can let node join the group.");
@@ -304,6 +337,13 @@ public class Node {
         //update gossip
         else if (header == gossip + update) {
             if (update(content, requestTime)) {
+                gossip(header, content, requestTime, this.gossipRound);
+            }
+        }
+        //elected gossip
+        else if (header == gossip + elected) {
+            if(!this.leader.equals(content));{
+                this.leader = content;
                 gossip(header, content, requestTime, this.gossipRound);
             }
         }
@@ -345,10 +385,79 @@ public class Node {
     private void ackHandler(int header, String source) {
         if (header == ack + leave) {
             this.memberList.remove(source);
-        } else if (header == ack + isAlive) {
+        }
+        else if (header == ack + isAlive) {
             if (this.ackList.containsKey(source)) {
                 this.ackList.put(source, "t");
             }
         }
+        else if (header == ack + election){
+            if (Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(source.substring(15,17))){
+                this.electionAcked.set(true);
+            }
+        }
     }
+
+    //bully algorithm for leader election
+    private void election(){
+        this.inElection.set(true);
+        this.leader = "";
+        this.memberList.forEach((host, time) -> {
+            if(Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(host.substring(15,17))){
+                send(host, this.port, election, this.hostName, Instant.now().toString());
+            }
+        });
+        this.electionAcked.set(false);
+        try{
+            Thread.sleep(this.electionPeriod);
+        }catch(Exception e){
+        }
+        if(this.electionAcked.get()){
+            try{
+                Thread.sleep(this.electionPeriod);
+            }catch(Exception e){
+            }
+            if(this.leader.equals("")){
+                election();
+            }
+        }
+        else{
+            this.leader = this.hostName;
+            gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
+        }
+        this.inElection.set(false);
+    }
+
+    private void electionHandler(String content){
+        send(content, this.port, election + ack, "", Instant.now().toString());
+        if(this.inElection.get()){
+            election();
+        }
+    }
+
+    public void put(String localFileName, String sdfsFileName){
+
+    }
+
+    public void get(String sdfsFileName, String localFileName){
+
+    }
+
+    public void delete(String sdfsFileName){
+
+    }
+
+    public void listFileLocations(String sdfsFileName){
+
+    }
+
+    public void listFileLocal(){
+
+    }
+
+    public void getVersions(String sdfsFileName, String numVersions, String localFileName){
+
+    }
+
+
 }
