@@ -429,29 +429,4 @@ public class Node {
         election();
     }
 
-    public void put(String localFileName, String sdfsFileName) {
-
-    }
-
-    public void get(String sdfsFileName, String localFileName) {
-
-    }
-
-    public void delete(String sdfsFileName) {
-
-    }
-
-    public void listFileLocations(String sdfsFileName) {
-
-    }
-
-    public void listFileLocal() {
-
-    }
-
-    public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
-
-    }
-
-
 }

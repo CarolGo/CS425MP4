@@ -20,15 +20,18 @@ public final class FileOperation {
     private static final int bufSize = Config.FILE_BUFFER_SIZE;
 
     // Runtime variable
+    private final Node node;
     private final ExecutorService exec;
     private final String serverHostname;
-
-    private ConcurrentHashMap<String, Set<String>> localFileMap = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<String, Set<String>> sdfsFileMap = new ConcurrentHashMap<>();
     private final ServerSocket serverSocket;
     private boolean isFileServerRunning;
 
-    public FileOperation() throws IOException {
+    // File meta data
+    private ConcurrentHashMap<String, Set<String>> localFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Set<String>> sdfsFileMap = new ConcurrentHashMap<>();
+
+    public FileOperation(Node n) throws IOException {
+        this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
         this.serverSocket = new ServerSocket(Config.TCP_PORT);
         int nThreads = Config.NUM_CORES * 2;
@@ -41,6 +44,36 @@ public final class FileOperation {
 
     public void stopServer() {
         this.isFileServerRunning = false;
+    }
+
+    public void put(String localFileName, String sdfsFileName) {
+
+    }
+
+    public void get(String sdfsFileName, String localFileName) {
+
+    }
+
+    public void delete(String sdfsFileName) {
+
+    }
+
+    public void listFileLocations(String sdfsFileName) {
+
+    }
+
+    public void listFileLocal() {
+
+    }
+
+    public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
+        int numOfLatestVersions;
+        try {
+            numOfLatestVersions = Integer.valueOf(numVersions);
+        } catch (NumberFormatException n) {
+            logger.error("Version number input error");
+            numOfLatestVersions = 1;
+        }
     }
 
     /**
