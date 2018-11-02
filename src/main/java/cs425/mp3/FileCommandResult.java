@@ -21,9 +21,15 @@ public class FileCommandResult implements Serializable {
      */
     private boolean hasError = false;
 
+    /**
+     * version for a file 0 if not exist
+     */
+    private int version;
 
-    public FileCommandResult(List<String> replicaNodes) {
+
+    public FileCommandResult(List<String> replicaNodes, int version) {
         this.replicaNodes = replicaNodes;
+        this.version = version;
     }
 
     public void setTimestamp(LocalDateTime timestamp) {
@@ -50,10 +56,19 @@ public class FileCommandResult implements Serializable {
         this.hasError = hasError;
     }
 
+    public int getVersion() {
+        return version;
+    }
+
+    public void setVersion(int version) {
+        this.version = version;
+    }
+
     public static FileCommandResult parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
         Object o = in.readObject();
         if (o instanceof FileCommandResult) return (FileCommandResult) o;
         return null;
     }
+
 
 }

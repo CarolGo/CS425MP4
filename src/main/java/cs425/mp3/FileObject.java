@@ -8,7 +8,7 @@ public class FileObject {
     /**
      * name of the file
      */
-    private String fileName;
+    private UUID id;
 
     /**
      * version of the file
@@ -29,7 +29,7 @@ public class FileObject {
      * @param version Target file version
      */
     public FileObject(String fileName, int version){
-        this.fileName = fileName;
+        this.id = UUID.fromString(fileName);
         this.version = version;
     }
 
@@ -39,16 +39,9 @@ public class FileObject {
      */
 
     public UUID getUUID(){
-        return UUID.fromString(this.fileName);
+        return this.id;
     }
 
-    public String getFileName() {
-        return fileName;
-    }
-
-    public void setFileName(String fileName) {
-        this.fileName = fileName;
-    }
 
     public int getVersion() {
         return version;
