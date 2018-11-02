@@ -17,7 +17,6 @@ import java.util.concurrent.Executors;
  */
 public final class FileOperation {
     private final Logger logger = LoggerFactory.getLogger(FileOperation.class);
-    private static final int bufSize = Config.FILE_BUFFER_SIZE;
 
     // Runtime variable
     private final Node node;
@@ -82,9 +81,9 @@ public final class FileOperation {
     private void localCopyFileToStorage(String originalPath, String newFileName) throws IOException {
         File dest = new File(Config.STORAGE_PATH, newFileName);
         File src = new File(originalPath);
-        try (InputStream is = new FileInputStream(src)) {
-            try (OutputStream os = new FileOutputStream(dest)) {
-                bufferedReadWrite(is, os);
+        try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(src))) {
+            try (BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(dest))) {
+                bufferedReadWrite(is, os, 8192);
             }
         }
     }
@@ -98,8 +97,7 @@ public final class FileOperation {
     private void sendFileViaSocket(String originalFilePath, Socket socket) throws IOException {
         socket.setSoTimeout(120_000); // 120s timeout
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(originalFilePath))) {
-            BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
-            bufferedReadWrite(in, out);
+            bufferedReadWrite(in, socket.getOutputStream(), Config.NETWORK_BUFFER_SIZE);
             logger.info("Finished sending file");
         }
     }
@@ -114,13 +112,13 @@ public final class FileOperation {
         File dest = new File(Config.STORAGE_PATH, newFileName);
         socket.setSoTimeout(120_000); // 120s timeout
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
-            bufferedReadWrite(socket.getInputStream(), bos);
+            bufferedReadWrite(socket.getInputStream(), bos, Config.NETWORK_BUFFER_SIZE);
             logger.info("Finished receiving file");
         }
     }
 
-    private void bufferedReadWrite(InputStream in, OutputStream out) throws IOException {
-        byte[] buf = new byte[bufSize];
+    private void bufferedReadWrite(InputStream in, OutputStream out, int bSize) throws IOException {
+        byte[] buf = new byte[bSize];
         int len;
         while ((len = in.read(buf)) > 0) {
             out.write(buf, 0, len);

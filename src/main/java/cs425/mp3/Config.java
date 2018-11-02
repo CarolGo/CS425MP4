@@ -17,7 +17,7 @@ public final class Config {
      */
     public static final int TCP_PORT = 8081;
 
-    public static final int FILE_BUFFER_SIZE = 8192;
+    public static final int NETWORK_BUFFER_SIZE = 1350;
 
     public static final long JOIN_PERIOD = 2000;
     public static final int GOSSIP_ROUND = 4; //need gossip 4 rounds to achieve the infection of majority
