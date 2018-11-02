@@ -7,10 +7,10 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.UUID;
 
 /**
  * All operations regarding distributed FS
@@ -20,7 +20,8 @@ public final class FileOperation {
 
     // Runtime variable
     private final Node node;
-    private final ExecutorService exec;
+    private final ExecutorService processThread;
+    private final ExecutorService singleMainThread;
     private final String serverHostname;
     private final ServerSocket serverSocket;
     private boolean isFileServerRunning;
@@ -33,16 +34,27 @@ public final class FileOperation {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
         this.serverSocket = new ServerSocket(Config.TCP_PORT);
-        int nThreads = Config.NUM_CORES * 2;
-        this.exec = Executors.newFixedThreadPool(nThreads);
+        this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+        this.singleMainThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
-        for (int i = 0; i < nThreads; i++) {
-            this.exec.submit(this.mainFileServer());
-        }
+        this.singleMainThread.submit(() -> {
+            Thread.currentThread().setName("FS-main");
+            logger.info("File server started listening on <{}>...", this.serverHostname);
+            while (this.isFileServerRunning) {
+                try {
+                    this.processThread.submit(this.mainFileServer(this.serverSocket.accept()));
+                } catch (IOException e) {
+                    logger.error("Server socket failed", e);
+                }
+            }
+            logger.info("File server stopped listening...");
+        });
     }
 
     public void stopServer() {
         this.isFileServerRunning = false;
+        this.processThread.shutdown();
+        this.singleMainThread.shutdown();
     }
 
     public void put(String localFileName, String sdfsFileName) {
@@ -129,22 +141,19 @@ public final class FileOperation {
     /**
      * Define operations for the file server
      */
-    private Runnable mainFileServer() {
+    private Runnable mainFileServer(Socket clientSocket) {
         return () -> {
-            Thread.currentThread().setName("FS-loop");
-            logger.info("File server running: <{}>", this.serverHostname);
-            while (this.isFileServerRunning) {
-                Socket clientSocket;
-                try {
-                    clientSocket = this.serverSocket.accept();
-                    logger.info("Connection from client {}.", clientSocket.getRemoteSocketAddress());
-                } catch (IOException e) {
-                    logger.error("Server socket failed", e);
-                    continue;
-                }
-                // Logic below
+            Thread.currentThread().setName("FS-process");
+            logger.info("Connection from client <{}>", clientSocket.getRemoteSocketAddress());
+            // Logic start
+
+            // Logic ends
+            try {
+                clientSocket.close();
+                logger.info("Closed connection from client: <{}>", clientSocket.getRemoteSocketAddress());
+            } catch (IOException e) {
+                logger.error("Close socket failed", e);
             }
-            logger.info("File server stopped: <{}>", this.serverHostname);
         };
     }
 
