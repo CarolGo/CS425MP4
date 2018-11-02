@@ -24,4 +24,5 @@ public final class Config {
     public static final int ELECTION_PERIOD = 200;
 
 
+    public static final int NUM_CORES = Runtime.getRuntime().availableProcessors();
 }

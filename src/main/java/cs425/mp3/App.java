@@ -17,6 +17,7 @@ public class App {
         Scanner input = new Scanner(System.in);
         String cmd;
         Node node = new Node();
+        FileOperation fOper = new FileOperation();
         while (true) {
             logger.info("Enter your command (id,list,join,leave): ");
             cmd = input.nextLine();
@@ -38,8 +39,8 @@ public class App {
                     node.printLeader();
                     break;
                 default:
-                    String [] arguments = cmd.split(" ");
-                    switch (arguments[0]){
+                    String[] arguments = cmd.split(" ");
+                    switch (arguments[0]) {
                         case "put": //put localfilename sdfsfilename
                             node.put(arguments[1], arguments[2]);
                             break;
@@ -56,7 +57,7 @@ public class App {
                             node.listFileLocal();
                             break;
                         case "get-versions":    //get-versions sdfsfilename numversions localfilename
-                            node.getVersions(arguments[1],arguments[2],arguments[3]);
+                            node.getVersions(arguments[1], arguments[2], arguments[3]);
                             break;
                         default:
                             logger.warn("Use input invalid");
