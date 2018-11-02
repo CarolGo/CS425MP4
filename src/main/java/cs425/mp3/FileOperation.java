@@ -7,10 +7,10 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.UUID;
 
 /**
  * All operations regarding distributed FS
@@ -26,8 +26,8 @@ public final class FileOperation {
     private boolean isFileServerRunning;
 
     // File meta data
-    private ConcurrentHashMap<String, Set<String>> localFileMap = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<String, Set<String>> sdfsFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<UUID, FileObject> localFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<UUID, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
     public FileOperation(Node n) throws IOException {
         this.node = n;
