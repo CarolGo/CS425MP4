@@ -420,8 +420,8 @@ public class Node {
 
 
     private void election() {
-        this.leader = "";
-        if (this.elector == null) {
+        if (this.elector == null){
+            this.leader = "";
             this.elector = new Thread(electionWorker());
             logger.trace("election thread start at <{}>", this.hostName);
             this.elector.start();
@@ -431,6 +431,7 @@ public class Node {
     private void electionHandler(String content) {
         send(content, this.port, election + ack, "", Instant.now().toString());
         if (this.elector == null) {
+            this.leader = "";
             this.elector = new Thread(electionWorker());
             logger.trace("election (with content) thread start at <{}>", this.hostName);
             this.elector.start();
