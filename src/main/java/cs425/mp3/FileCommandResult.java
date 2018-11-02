@@ -20,7 +20,7 @@ public class FileCommandResult implements Serializable{
     private boolean hasError = false;
 
 
-    public void FileCommandResult(List<String> replicaNodes){
+    public FileCommandResult(List<String> replicaNodes){
         this.replicaNodes = replicaNodes;
     }
 
