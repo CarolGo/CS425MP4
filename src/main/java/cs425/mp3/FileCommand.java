@@ -1,5 +1,7 @@
 package cs425.mp3;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
@@ -8,7 +10,7 @@ import java.time.LocalDateTime;
  * command send by client to server.
  */
 
-public class FileCommand implements Serializable{
+public class FileCommand implements Serializable {
 
     /**
      * msg type
@@ -37,9 +39,9 @@ public class FileCommand implements Serializable{
     /**
      * Initialize File command object
      *
-     * @param hostName Target host
+     * @param hostName   Target host
      * @param fileName   Target file name
-     * @param versionNum    Target file version
+     * @param versionNum Target file version
      */
     public FileCommand(String type, String hostName, String fileName, int versionNum) {
         this.hostName = hostName;
@@ -49,11 +51,11 @@ public class FileCommand implements Serializable{
     }
 
 
-    public void setType(String type){
+    public void setType(String type) {
         this.type = type;
     }
 
-    public String getType(){
+    public String getType() {
         return type;
     }
 
@@ -88,4 +90,11 @@ public class FileCommand implements Serializable{
     public void setVersionNum(int versionNum) {
         this.versionNum = versionNum;
     }
+
+    public static FileCommand parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        Object o = in.readObject();
+        if (o instanceof FileCommand) return (FileCommand) o;
+        return null;
+    }
+
 }

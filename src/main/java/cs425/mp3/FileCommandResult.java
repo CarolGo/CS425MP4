@@ -1,10 +1,12 @@
 package cs425.mp3;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.List;
 
-public class FileCommandResult implements Serializable{
+public class FileCommandResult implements Serializable {
 
     /**
      * host names for storing and fetch replicas
@@ -20,7 +22,7 @@ public class FileCommandResult implements Serializable{
     private boolean hasError = false;
 
 
-    public FileCommandResult(List<String> replicaNodes){
+    public FileCommandResult(List<String> replicaNodes) {
         this.replicaNodes = replicaNodes;
     }
 
@@ -32,11 +34,11 @@ public class FileCommandResult implements Serializable{
         return this.timestamp;
     }
 
-    public List<String> getReplicaNodes(){
+    public List<String> getReplicaNodes() {
         return this.replicaNodes;
     }
 
-    public void setReplicaNodes(List<String> replicaNodes){
+    public void setReplicaNodes(List<String> replicaNodes) {
         this.replicaNodes = replicaNodes;
     }
 
@@ -48,6 +50,10 @@ public class FileCommandResult implements Serializable{
         this.hasError = hasError;
     }
 
-
+    public static FileCommandResult parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        Object o = in.readObject();
+        if (o instanceof FileCommandResult) return (FileCommandResult) o;
+        return null;
+    }
 
 }
