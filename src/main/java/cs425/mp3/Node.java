@@ -215,6 +215,7 @@ public class Node {
                     util.noExceptionSleep(this.electionPeriod);
                 } else {
                     this.leader = this.hostName;
+                    logger.info("self elected at <{}>", this.hostName);
                     gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
                 }
             }
@@ -416,14 +417,18 @@ public class Node {
 
     private void election() {
         this.leader = "";
-        this.elector = new Thread(electionWorker());
-        this.elector.start();
+        if (this.elector == null){
+            this.elector = new Thread(electionWorker());
+            logger.info("election thread start at <{}>", this.hostName);
+            this.elector.start();
+        }
     }
 
     private void electionHandler(String content) {
         send(content, this.port, election + ack, "", Instant.now().toString());
         if (this.elector == null) {
             this.elector = new Thread(electionWorker());
+            logger.info("election thread start at <{}>", this.hostName);
             this.elector.start();
         }
     }
