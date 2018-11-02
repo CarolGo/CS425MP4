@@ -22,9 +22,9 @@ public class Node {
     private boolean isIntroducer;
     private AtomicBoolean inGroup = new AtomicBoolean(false);
     private AtomicBoolean electionAcked = new AtomicBoolean(false);
-    private AtomicBoolean inElection = new AtomicBoolean(false);
     private final long pingPeriod = 2000;
     private Thread receive;
+    private Thread elector;
     //header for different msg types
     private final int ack = 20;
     private final int gossip = 10;
@@ -86,6 +86,7 @@ public class Node {
             logger.error("join the group first");
         }
     }
+
 
     private Runnable receiveWorker() {
         return () -> {
@@ -203,6 +204,35 @@ public class Node {
                     }
                 }
             }
+        };
+    }
+
+    //bully algorithm for leader election
+    private Runnable electionWorker(){
+        return () -> {
+            while (this.leader.equals("")){
+                this.memberList.forEach((host, time) -> {
+                    if(Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(host.substring(15,17))){
+                        send(host, this.port, election, this.hostName, Instant.now().toString());
+                    }
+                });
+                this.electionAcked.set(false);
+                try{
+                    Thread.sleep(this.electionPeriod);
+                }catch(Exception e){
+                }
+                if(this.electionAcked.get()){
+                    try{
+                        Thread.sleep(this.electionPeriod);
+                    }catch(Exception e){
+                    }
+                }
+                else{
+                    this.leader = this.hostName;
+                    gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
+                }
+            }
+            this.elector = null;
         };
     }
 
@@ -400,40 +430,19 @@ public class Node {
         }
     }
 
-    //bully algorithm for leader election
+
+
     private void election(){
-        this.inElection.set(true);
         this.leader = "";
-        this.memberList.forEach((host, time) -> {
-            if(Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(host.substring(15,17))){
-                send(host, this.port, election, this.hostName, Instant.now().toString());
-            }
-        });
-        this.electionAcked.set(false);
-        try{
-            Thread.sleep(this.electionPeriod);
-        }catch(Exception e){
-        }
-        if(this.electionAcked.get()){
-            try{
-                Thread.sleep(this.electionPeriod);
-            }catch(Exception e){
-            }
-            if(this.leader.equals("")){
-                election();
-            }
-        }
-        else{
-            this.leader = this.hostName;
-            gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
-        }
-        this.inElection.set(false);
+        this.elector = new Thread(electionWorker());
+        this.elector.start();
     }
 
     private void electionHandler(String content){
         send(content, this.port, election + ack, "", Instant.now().toString());
-        if(!this.inElection.get()){
-            election();
+        if(this.elector == null){
+            this.elector = new Thread(electionWorker());
+            this.elector.start();
         }
     }
 
