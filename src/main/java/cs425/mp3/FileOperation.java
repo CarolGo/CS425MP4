@@ -36,10 +36,10 @@ public final class FileOperation {
         this.serverSocket = new ServerSocket(Config.TCP_PORT);
         int nThreads = Config.NUM_CORES * 2;
         this.exec = Executors.newFixedThreadPool(nThreads);
+        this.isFileServerRunning = true;
         for (int i = 0; i < nThreads; i++) {
             this.exec.submit(this.mainFileServer());
         }
-        this.isFileServerRunning = true;
     }
 
     public void stopServer() {

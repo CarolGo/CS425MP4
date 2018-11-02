@@ -74,8 +74,12 @@ public class App {
      */
     private static void initEnv() {
         File f = new File(Config.STORAGE_PATH);
-        if (!f.mkdirs()) {
-            logger.error("Error creating storage path: {}", Config.STORAGE_PATH);
+        if (!f.exists()) {
+            logger.debug("Creating storage folder...");
+            if (!f.mkdirs()) {
+                logger.error("Error creating storage path: {}", Config.STORAGE_PATH);
+                System.exit(-1);
+            }
         }
         logger.info("Started at {}...", LocalDateTime.now());
     }
