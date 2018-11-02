@@ -65,12 +65,10 @@ public class Node {
     }
 
 
-
     public void printLeader() {
-        if (!this.leader.isEmpty()){
+        if (!this.leader.isEmpty()) {
             logger.info("current leader:{}", this.leader);
-        }
-        else{
+        } else {
             logger.info("no leader selected");
         }
     }
@@ -141,7 +139,7 @@ public class Node {
                             ackHandler(25, source);
                             break;
                         default:
-                            logger.error("Received header: {}",header);
+                            logger.error("Received header: {}", header);
                             throw new RuntimeException("Invalid header");
                     }
                 }
@@ -192,8 +190,8 @@ public class Node {
                         if (this.ackList.get(host).equals("f")) {
                             this.memberList.remove(host);
                             logger.info("failure of <{}> detected at <{}>", host, Instant.now());
-                            logger.info("start leader election protocal");
-                            if(host.equals(this.leader)){
+                            if (host.equals(this.leader)) {
+                                logger.info("start leader election protocol");
                                 election();
                             }
                             needUpdate = true;
@@ -208,26 +206,25 @@ public class Node {
     }
 
     //bully algorithm for leader election
-    private Runnable electionWorker(){
+    private Runnable electionWorker() {
         return () -> {
-            while (this.leader.equals("")){
+            while (this.leader.equals("")) {
                 this.memberList.forEach((host, time) -> {
-                    if(Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(host.substring(15,17))){
+                    if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
                         send(host, this.port, election, this.hostName, Instant.now().toString());
                     }
                 });
                 this.electionAcked.set(false);
-                try{
+                try {
                     Thread.sleep(this.electionPeriod);
-                }catch(Exception e){
+                } catch (Exception e) {
                 }
-                if(this.electionAcked.get()){
-                    try{
+                if (this.electionAcked.get()) {
+                    try {
                         Thread.sleep(this.electionPeriod);
-                    }catch(Exception e){
+                    } catch (Exception e) {
                     }
-                }
-                else{
+                } else {
                     this.leader = this.hostName;
                     gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
                 }
@@ -264,7 +261,6 @@ public class Node {
 
         }
     }
-
 
 
     public void leave() throws InterruptedException {
@@ -374,7 +370,7 @@ public class Node {
         }
         //elected gossip
         else if (header == gossip + elected) {
-            if(!this.leader.equals(content)) {
+            if (!this.leader.equals(content)) {
                 this.leader = content;
                 gossip(header, content, requestTime, this.gossipRound);
             }
@@ -417,56 +413,53 @@ public class Node {
     private void ackHandler(int header, String source) {
         if (header == ack + leave) {
             this.memberList.remove(source);
-        }
-        else if (header == ack + isAlive) {
+        } else if (header == ack + isAlive) {
             if (this.ackList.containsKey(source)) {
                 this.ackList.put(source, "t");
             }
-        }
-        else if (header == ack + election){
-            if (Integer.parseInt(this.hostName.substring(15,17)) < Integer.parseInt(source.substring(15,17))){
+        } else if (header == ack + election) {
+            if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(source.substring(15, 17))) {
                 this.electionAcked.set(true);
             }
         }
     }
 
 
-
-    private void election(){
+    private void election() {
         this.leader = "";
         this.elector = new Thread(electionWorker());
         this.elector.start();
     }
 
-    private void electionHandler(String content){
+    private void electionHandler(String content) {
         send(content, this.port, election + ack, "", Instant.now().toString());
-        if(this.elector == null){
+        if (this.elector == null) {
             this.elector = new Thread(electionWorker());
             this.elector.start();
         }
     }
 
-    public void put(String localFileName, String sdfsFileName){
+    public void put(String localFileName, String sdfsFileName) {
 
     }
 
-    public void get(String sdfsFileName, String localFileName){
+    public void get(String sdfsFileName, String localFileName) {
 
     }
 
-    public void delete(String sdfsFileName){
+    public void delete(String sdfsFileName) {
 
     }
 
-    public void listFileLocations(String sdfsFileName){
+    public void listFileLocations(String sdfsFileName) {
 
     }
 
-    public void listFileLocal(){
+    public void listFileLocal() {
 
     }
 
-    public void getVersions(String sdfsFileName, String numVersions, String localFileName){
+    public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
 
     }
 
