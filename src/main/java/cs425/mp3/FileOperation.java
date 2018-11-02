@@ -16,7 +16,7 @@ import java.util.concurrent.Executors;
  * All operations regarding distributed FS
  */
 public final class FileOperation {
-    private static final Logger logger = LoggerFactory.getLogger(FileOperation.class);
+    private final Logger logger = LoggerFactory.getLogger(FileOperation.class);
     private static final int bufSize = Config.FILE_BUFFER_SIZE;
 
     // Runtime variable
@@ -79,35 +79,33 @@ public final class FileOperation {
     /**
      * Just send the file via socket, do nothing with socket
      */
-    public static void sendFileViaSocket(String filePath, Socket socket) throws IOException {
+    private void sendFileViaSocket(String filePath, Socket socket) throws IOException {
         socket.setSoTimeout(120_000); // 120s timeout
-        BufferedInputStream in = new BufferedInputStream(new FileInputStream(filePath));
-        BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(filePath))) {
+            BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+            bufferedReadWrite(in, out);
+            logger.info("Finished sending file");
+        }
+    }
 
+    /**
+     * Receive a file via socket, do nothing with socket
+     */
+    private void readFileViaSocket(String targetPath, Socket socket) throws IOException {
+        socket.setSoTimeout(120_000); // 120s timeout
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(targetPath))) {
+            bufferedReadWrite(socket.getInputStream(), bos);
+            logger.info("Finished receiving file");
+        }
+    }
+
+    private void bufferedReadWrite(InputStream in, OutputStream out) throws IOException {
         byte[] buf = new byte[bufSize];
         int len;
         while ((len = in.read(buf)) > 0) {
             out.write(buf, 0, len);
         }
-
-        logger.info("Finished sending file");
-        in.close();
         out.flush();
-    }
-
-    public static void readFileViaSocket(String targetPath, Socket socket) throws IOException {
-        socket.setSoTimeout(120_000); // 120s timeout
-        BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(targetPath));
-        InputStream in = socket.getInputStream();
-
-        byte[] buf = new byte[bufSize];
-        int len;
-        while ((len = in.read(buf)) > 0) {
-            bos.write(buf, 0, len);
-        }
-
-        logger.info("Finished receiving file");
-        bos.close();
     }
 
     /**
@@ -116,7 +114,7 @@ public final class FileOperation {
     private Runnable mainFileServer() {
         return () -> {
             Thread.currentThread().setName("FS-loop");
-            logger.info(String.format("File server running: <%s>", this.serverHostname));
+            logger.info("File server running: <{}>", this.serverHostname);
             while (this.isFileServerRunning) {
                 Socket clientSocket;
                 try {
@@ -128,7 +126,7 @@ public final class FileOperation {
                 }
                 // Logic below
             }
-            logger.info(String.format("File server stopped: <%s>", this.serverHostname));
+            logger.info("File server stopped: <{}>", this.serverHostname);
         };
     }
 

@@ -24,6 +24,7 @@ public final class Config {
     public static final int ELECTION_PERIOD = 200;
 
 
+    public static final String STORAGE_PATH = "mp3_fs_data";
     public static final String DEFAULT_MASTER_HOSTNAME = "fa18-cs425-g17-01.cs.illinois.edu";
     public static final int NUM_CORES = Runtime.getRuntime().availableProcessors();
 }

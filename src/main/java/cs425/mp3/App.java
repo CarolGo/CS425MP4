@@ -3,6 +3,7 @@ package cs425.mp3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.File;
 import java.time.LocalDateTime;
 import java.util.Scanner;
 
@@ -12,7 +13,7 @@ public class App {
     private static final Logger logger = LoggerFactory.getLogger(App.class);
 
     public static void main(String... args) throws Exception {
-        logger.info("Started at {}...", LocalDateTime.now());
+        initEnv();
 
         Scanner input = new Scanner(System.in);
         String cmd;
@@ -67,4 +68,16 @@ public class App {
             }
         }
     }
+
+    /**
+     * Init the runtime env
+     */
+    private static void initEnv() {
+        File f = new File(Config.STORAGE_PATH);
+        if (!f.mkdirs()) {
+            logger.error("Error creating storage path: {}", Config.STORAGE_PATH);
+        }
+        logger.info("Started at {}...", LocalDateTime.now());
+    }
+
 }
