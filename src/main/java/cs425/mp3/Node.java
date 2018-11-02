@@ -46,7 +46,7 @@ public class Node {
     public Node() throws UnknownHostException {
         this.hostName = Util.getCurrentHostname();
         this.lastGossipTime = Instant.now();
-        if (hostName.equals("fa18-cs425-g17-01.cs.illinois.edu")) {
+        if (hostName.equals(Config.DEFAULT_MASTER_HOSTNAME)) {
             this.isIntroducer = true;
         }
         logger.info("Hostname: {}", this.hostName);
@@ -240,7 +240,7 @@ public class Node {
                 logger.warn("introducer ready");
             } else {
                 while (this.memberList.isEmpty()) {
-                    send("fa18-cs425-g17-01.cs.illinois.edu", this.port, join, "", Instant.now().toString());
+                    send(Config.DEFAULT_MASTER_HOSTNAME, this.port, join, "", Instant.now().toString());
                     Util.noExceptionSleep(this.joinPeriod);
                 }
             }
