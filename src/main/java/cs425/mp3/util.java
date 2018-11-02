@@ -1,5 +1,8 @@
 package cs425.mp3;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
@@ -8,6 +11,7 @@ import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
 public class util {
+    private static final Logger logger = LoggerFactory.getLogger(util.class);
 
     public static String getHostnameFromIp(String ip) throws UnknownHostException {
         return InetAddress.getByName(ip).getHostName();
@@ -19,6 +23,21 @@ public class util {
 
     public static String getCurrentHostname() throws UnknownHostException {
         return InetAddress.getLocalHost().getCanonicalHostName();
+    }
+
+    /**
+     * Thread.sleep without throwing exception
+     */
+    public static boolean noExceptionSleep(long millSecond) {
+        try {
+            Thread.sleep(millSecond);
+        } catch (InterruptedException e) {
+            StackTraceElement[] ste = e.getStackTrace();
+            if (ste.length > 1)
+                logger.error("Thread sleep failed: <{}:{}>", ste[1].getFileName(), ste[1].getLineNumber());
+            return false;
+        }
+        return true;
     }
 
     public static String ungzip(byte[] bytes) throws Exception {

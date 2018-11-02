@@ -152,9 +152,9 @@ public class Node {
 
     private Runnable FDWorker() {
         return () -> {
+            Thread.currentThread().setName("failure_detector");
             while (this.inGroup.get()) {
                 if (this.memberList.size() > 3) {
-                    Thread.currentThread().setName("failure_detector");
                     List<String> keys = new ArrayList<>(this.memberList.keySet());
                     int index = keys.indexOf(this.hostName);
                     int next1, next2, next3;
@@ -168,10 +168,7 @@ public class Node {
                     send(keys.get(next1), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next2), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
-                    try {
-                        Thread.sleep(500);
-                    } catch (Exception e) {
-                    }
+                    util.noExceptionSleep(500);
                     int i = 0;
                     for (; i < 5; i++) {
                         for (String host : this.ackList.keySet()) {
@@ -180,10 +177,7 @@ public class Node {
                                 // logger.info("{}th ping <{}> at <{}>", Integer.toString(i), host, Instant.now());
                             }
                         }
-                        try {
-                            Thread.sleep(200);
-                        } catch (Exception e) {
-                        }
+                        util.noExceptionSleep(200);
                     }
                     boolean needUpdate = false;
                     for (String host : this.ackList.keySet()) {
@@ -208,6 +202,7 @@ public class Node {
     //bully algorithm for leader election
     private Runnable electionWorker() {
         return () -> {
+            Thread.currentThread().setName("bully_algorithm");
             while (this.leader.equals("")) {
                 this.memberList.forEach((host, time) -> {
                     if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
@@ -215,15 +210,9 @@ public class Node {
                     }
                 });
                 this.electionAcked.set(false);
-                try {
-                    Thread.sleep(this.electionPeriod);
-                } catch (Exception e) {
-                }
+                util.noExceptionSleep(this.electionPeriod);
                 if (this.electionAcked.get()) {
-                    try {
-                        Thread.sleep(this.electionPeriod);
-                    } catch (Exception e) {
-                    }
+                    util.noExceptionSleep(this.electionPeriod);
                 } else {
                     this.leader = this.hostName;
                     gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
@@ -233,7 +222,7 @@ public class Node {
         };
     }
 
-    public void join() throws InterruptedException {
+    public void join() {
         if (this.inGroup.get()) {
             logger.warn("already in the group");
         } else {
@@ -250,7 +239,7 @@ public class Node {
             } else {
                 while (this.memberList.isEmpty()) {
                     send("fa18-cs425-g17-01.cs.illinois.edu", this.port, join, "", Instant.now().toString());
-                    Thread.sleep(this.pingPeriod);
+                    util.noExceptionSleep(this.pingPeriod);
                 }
             }
             if (this.FD == null) {
@@ -263,12 +252,12 @@ public class Node {
     }
 
 
-    public void leave() throws InterruptedException {
+    public void leave() {
         if (this.inGroup.get()) {
             this.memberList.remove(this.hostName);
             gossip(gossip + leave, this.hostName, Instant.now().toString(), this.gossipRound);
             while (!this.memberList.isEmpty()) {
-                Thread.sleep(500);
+                util.noExceptionSleep(500);
                 this.memberList.forEach((host, time) -> {
                     send(host, this.port, leave, this.hostName, Instant.now().toString());
                 });
