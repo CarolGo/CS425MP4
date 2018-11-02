@@ -3,14 +3,12 @@ package cs425.mp3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.DatagramPacket;
-import java.net.DatagramSocket;
-import java.net.InetAddress;
-import java.net.UnknownHostException;
+import java.net.*;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -18,11 +16,12 @@ public class Node {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     private String hostName;
-    private int port;
+    private final int port = 8080;
+    private final int TCPPort = 8081;
     private boolean isIntroducer;
     private AtomicBoolean inGroup = new AtomicBoolean(false);
     private AtomicBoolean electionAcked = new AtomicBoolean(false);
-    private final long pingPeriod = 2000;
+    private final long joinPeriod = 2000;
     private Thread receive;
     private Thread elector;
     //header for different msg types
@@ -34,15 +33,20 @@ public class Node {
     private final int update = 3;
     private final int elected = 4;
     private final int election = 5;
-    private final int gossipRound = 4; //need gossip 4 rounds to achieve overall infection
+    private final int gossipRound = 4;  //need gossip 4 rounds to achieve the infection of majority
     private final int electionPeriod = 200;
     private Instant lastGossipTime;
     private String leader = "";
+    private ConcurrentHashMap<String, String> memberList = new ConcurrentHashMap<>();
+    private Thread FD;
+    private DatagramSocket ds;
+    private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Set<String>> localFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, Set<String>> sdfsFileMap = new ConcurrentHashMap<>();
 
 
     public Node() throws UnknownHostException {
         this.hostName = Util.getCurrentHostname();
-        this.port = 8080;
         this.lastGossipTime = Instant.now();
         if (hostName.equals("fa18-cs425-g17-01.cs.illinois.edu")) {
             this.isIntroducer = true;
@@ -50,10 +54,6 @@ public class Node {
         logger.info("Hostname: {}", this.hostName);
     }
 
-    private ConcurrentHashMap<String, String> memberList = new ConcurrentHashMap<>();
-    private Thread FD;
-    private DatagramSocket ds;
-    private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
 
     //print id for each node
     public void printId() throws UnknownHostException {
@@ -65,6 +65,7 @@ public class Node {
     }
 
 
+    //print the current leader
     public void printLeader() {
         if (!this.leader.isEmpty()) {
             logger.info("current leader:{}", this.leader);
@@ -202,9 +203,8 @@ public class Node {
     //bully algorithm for leader election
     private Runnable electionWorker() {
         return () -> {
-            Thread.currentThread().setName("bully_algorithm");
+            Thread.currentThread().setName("electionWorker");
             while (this.leader.equals("")) {
-                logger.info("election routine start at <{}>", this.hostName);
                 int electionSendCnt = 0;
                 for (String host : this.memberList.keySet()) {
                     if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
@@ -243,7 +243,7 @@ public class Node {
             } else {
                 while (this.memberList.isEmpty()) {
                     send("fa18-cs425-g17-01.cs.illinois.edu", this.port, join, "", Instant.now().toString());
-                    Util.noExceptionSleep(this.pingPeriod);
+                    Util.noExceptionSleep(this.joinPeriod);
                 }
             }
             if (this.FD == null) {
@@ -417,12 +417,11 @@ public class Node {
         }
     }
 
-
     private void election() {
         if (this.elector == null){
             this.leader = "";
             this.elector = new Thread(electionWorker());
-            logger.trace("election thread start at <{}>", this.hostName);
+            logger.info("election thread start at <{}>", this.hostName);
             this.elector.start();
         }
     }
@@ -432,8 +431,14 @@ public class Node {
         election();
     }
 
-    public void put(String localFileName, String sdfsFileName) {
-
+    public void put(String localFileName, String sdfsFileName){
+        if (!this.leader.isEmpty()){
+            Socket s = FileOperation.connect(this.leader, this.TCPPort);
+            if (s != null){
+                String operation = "put" + ":" + sdfsFileName;
+                FileOperation.sendMsgViaSocket(operation, s);
+            }
+        }
     }
 
     public void get(String sdfsFileName, String localFileName) {

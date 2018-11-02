@@ -11,6 +11,16 @@ public final class FileOperation {
 
     private static final int BUF_SIZE = 8192;
 
+    public static Socket connect(String host, int port){
+        try{
+            Socket s = new Socket(host, port);
+            return s;
+        } catch(Exception e){
+            logger.error("Send error", e);
+            return null;
+        }
+    }
+
     /**
      * Just send the file via socket, do nothing with socket
      */
@@ -43,6 +53,16 @@ public final class FileOperation {
 
         logger.info("Finished receiving file");
         bos.close();
+    }
+
+    public static void sendMsgViaSocket(String msg, Socket socket) throws IOException {
+        socket.setSoTimeout(120_000); // 120s timeout
+        BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
+        byte [] buf = msg.getBytes();
+        int len = buf.length;
+        out.write(buf, 0, len);
+        logger.info("Finished sending msg:{} ",msg);
+        out.flush();
     }
 
 }
