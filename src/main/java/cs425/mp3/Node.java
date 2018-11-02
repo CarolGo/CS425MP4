@@ -431,14 +431,8 @@ public class Node {
         election();
     }
 
-    public void put(String localFileName, String sdfsFileName){
-        if (!this.leader.isEmpty()){
-            Socket s = FileOperation.connect(this.leader, this.TCPPort);
-            if (s != null){
-                String operation = "put" + ":" + sdfsFileName;
-                FileOperation.sendMsgViaSocket(operation, s);
-            }
-        }
+    public void put(String localFileName, String sdfsFileName) {
+
     }
 
     public void get(String sdfsFileName, String localFileName) {
