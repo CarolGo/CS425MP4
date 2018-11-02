@@ -429,4 +429,7 @@ public class Node {
         election();
     }
 
+    public String getLeader() {
+        return leader;
+    }
 }

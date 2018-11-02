@@ -26,8 +26,8 @@ public final class FileOperation {
     private boolean isFileServerRunning;
 
     // File meta data
-    private ConcurrentHashMap<UUID, FileObject> localFileMap = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<UUID, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, FileObject> localFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
     public FileOperation(Node n) throws IOException {
         this.node = n;
