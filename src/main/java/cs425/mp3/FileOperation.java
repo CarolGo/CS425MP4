@@ -3,13 +3,16 @@ package cs425.mp3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jnlp.FileContents;
 import java.io.*;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.net.SocketAddress;
 import java.util.UUID;
 
 /**
@@ -89,6 +92,54 @@ public final class FileOperation {
     }
 
     /**
+     * connection to host
+     * @param host
+     * @return socket
+     */
+
+    private Socket connectToServer(String host) throws IOException {
+        Socket s = new Socket();
+        // Potential higher performance with SO_KA
+        s.setKeepAlive(true);
+        s.connect(new InetSocketAddress(host,Config.TCP_PORT), Config.CONNECT_TIMEOUT_SECOND * 1000);
+        s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
+        logger.info("Connected to server {}",host);
+        return s;
+    }
+
+    /**
+     * Just send the file command via socket, do nothing with socket
+     *
+     * @param fc  File path for the file you want to send
+     * @param socket           A socket connects to remote host
+     */
+
+    private  FileCommandResult sendFileCommandViaSocket(FileCommand fc, Socket socket) throws IOException{
+        FileCommandResult res = null;
+        try {
+            // Output goes first or the input will block forever
+            ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(socket.getInputStream()));
+
+            out.writeObject(fc);
+            out.flush();
+            logger.info("file command sent on '{}'.", fc.getTimestamp());
+
+            // Some blocking here for sure
+            res =  FileCommandResult.parseFromStream(in);
+            // Communication finished, notice the sequence
+            in.close();
+            out.close();
+            socket.close();
+
+        } catch (ClassNotFoundException e) {
+            logger.error("Client received malformed data!");
+        }
+        return res;
+
+    }
+
+    /**
      * Just send the file via socket, do nothing with socket
      *
      * @param originalFilePath File path for the file you want to send
@@ -116,6 +167,36 @@ public final class FileOperation {
             logger.info("Finished receiving file");
         }
     }
+
+    /**
+     *
+     * @param sdfsFileName SDFS file name
+     * @return verision number 0 if not exist, otherwise latest version number in master node.
+     */
+
+    private int query(String sdfsFileName) {
+        int version = -1;
+        String leader = this.node.getLeader();
+        if(!leader.isEmpty()){
+            FileCommand cmd = new FileCommand("query", leader, sdfsFileName,0 );
+            try{
+                Socket s = connectToServer(leader);
+                FileCommandResult res = sendFileCommandViaSocket(cmd, s);
+                if(!res.isHasError()){
+                    version = res.getVersion();
+                    return version;
+                }
+            } catch (IOException e) {
+                logger.debug("Failed to establish connection");
+                return version;
+            }
+        }
+        logger.info("leader not elected");
+        return version;
+    }
+
+
+
 
     private void bufferedReadWrite(InputStream in, OutputStream out, int bSize) throws IOException {
         byte[] buf = new byte[bSize];
