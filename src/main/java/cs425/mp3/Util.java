@@ -7,11 +7,15 @@ import java.io.*;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-public class util {
-    private static final Logger logger = LoggerFactory.getLogger(util.class);
+public final class Util {
+    private static final Logger logger = LoggerFactory.getLogger(Util.class);
+
+    private Util() {
+    }
 
     public static String getHostnameFromIp(String ip) throws UnknownHostException {
         return InetAddress.getByName(ip).getHostName();
@@ -38,6 +42,10 @@ public class util {
             return false;
         }
         return true;
+    }
+
+    public static String generateUuid() {
+        return UUID.randomUUID().toString();
     }
 
     public static String ungzip(byte[] bytes) throws Exception {

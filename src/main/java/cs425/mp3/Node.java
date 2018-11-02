@@ -41,7 +41,7 @@ public class Node {
 
 
     public Node() throws UnknownHostException {
-        this.hostName = util.getCurrentHostname();
+        this.hostName = Util.getCurrentHostname();
         this.port = 8080;
         this.lastGossipTime = Instant.now();
         if (hostName.equals("fa18-cs425-g17-01.cs.illinois.edu")) {
@@ -58,7 +58,7 @@ public class Node {
     //print id for each node
     public void printId() throws UnknownHostException {
         if (this.inGroup.get()) {
-            logger.info("id:{}  $$  ip:{}  $$  timestamp:{}   ", this.hostName, util.getIpFromHostname(this.hostName), this.memberList.get(this.hostName));
+            logger.info("id:{}  $$  ip:{}  $$  timestamp:{}   ", this.hostName, Util.getIpFromHostname(this.hostName), this.memberList.get(this.hostName));
         } else {
             logger.info("join the group first");
         }
@@ -78,7 +78,7 @@ public class Node {
         if (this.inGroup.get()) {
             logger.info("Membership list of " + this.hostName + ":");
             for (String host : this.memberList.keySet()) {
-                logger.info("id:{}  $$  ip:{}  $$  timestamp:{}   ", host, util.getIpFromHostname(host), this.memberList.get(host));
+                logger.info("id:{}  $$  ip:{}  $$  timestamp:{}   ", host, Util.getIpFromHostname(host), this.memberList.get(host));
             }
         } else {
             logger.error("join the group first");
@@ -102,7 +102,7 @@ public class Node {
                     }
                     String header = message[0];
                     String content = message[1];
-                    String source = util.getHostnameFromIp(message[2]);
+                    String source = Util.getHostnameFromIp(message[2]);
                     String timestamp = message[3].trim();
                     //if (! header.equals(Integer.toString(isAlive))  && ! header.equals(Integer.toString(isAlive+ack))){
                     //  logger.info("receive from <{}> with <{}>---------------------",source,raw);
@@ -168,7 +168,7 @@ public class Node {
                     send(keys.get(next1), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next2), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
-                    util.noExceptionSleep(500);
+                    Util.noExceptionSleep(500);
                     int i = 0;
                     for (; i < 5; i++) {
                         for (String host : this.ackList.keySet()) {
@@ -177,7 +177,7 @@ public class Node {
                                 // logger.info("{}th ping <{}> at <{}>", Integer.toString(i), host, Instant.now());
                             }
                         }
-                        util.noExceptionSleep(200);
+                        Util.noExceptionSleep(200);
                     }
                     boolean needUpdate = false;
                     for (String host : this.ackList.keySet()) {
@@ -213,9 +213,9 @@ public class Node {
                     }
                 }
                 this.electionAcked.set(false);
-                util.noExceptionSleep(this.electionPeriod);
+                Util.noExceptionSleep(this.electionPeriod);
                 if (this.electionAcked.get() && electionSendCnt != 0) {
-                    util.noExceptionSleep(this.electionPeriod);
+                    Util.noExceptionSleep(this.electionPeriod);
                 } else {
                     this.leader = this.hostName;
                     logger.info("self elected at <{}>", this.hostName);
@@ -243,7 +243,7 @@ public class Node {
             } else {
                 while (this.memberList.isEmpty()) {
                     send("fa18-cs425-g17-01.cs.illinois.edu", this.port, join, "", Instant.now().toString());
-                    util.noExceptionSleep(this.pingPeriod);
+                    Util.noExceptionSleep(this.pingPeriod);
                 }
             }
             if (this.FD == null) {
@@ -261,7 +261,7 @@ public class Node {
             this.memberList.remove(this.hostName);
             gossip(gossip + leave, this.hostName, Instant.now().toString(), this.gossipRound);
             while (!this.memberList.isEmpty()) {
-                util.noExceptionSleep(500);
+                Util.noExceptionSleep(500);
                 this.memberList.forEach((host, time) -> {
                     send(host, this.port, leave, this.hostName, Instant.now().toString());
                 });
@@ -278,7 +278,7 @@ public class Node {
 
     private void send(String host, int port, int header, String content, String requestTime) {
         try {
-            String msg = String.format("%d|%s|%s|%s", header, content, util.getIpFromHostname(this.hostName), requestTime);
+            String msg = String.format("%d|%s|%s|%s", header, content, Util.getIpFromHostname(this.hostName), requestTime);
             //logger.info("send to <{}> with <{}>--------------------------", host, msg);
 
             byte[] buf = msg.getBytes();

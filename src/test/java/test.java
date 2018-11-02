@@ -1,10 +1,10 @@
-import cs425.mp3.util;
+import cs425.mp3.Util;
 
 public class test {
 
     public static void main(String... args) {
         System.err.println("Start test");
-        util.noExceptionSleep(500);
+        Util.noExceptionSleep(500);
         System.err.println("End test");
     }
 
