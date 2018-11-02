@@ -203,9 +203,11 @@ public class Node {
     private Runnable electionWorker() {
         return () -> {
             Thread.currentThread().setName("bully_algorithm");
+            logger.trace("Current leader is: <{}>", this.leader);
             while (this.leader.equals("")) {
+                logger.info("election routine start at <{}>", this.hostName);
                 int electionSendCnt = 0;
-                for (String host: this.memberList.keySet()){
+                for (String host : this.memberList.keySet()) {
                     if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
                         send(host, this.port, election, this.hostName, Instant.now().toString());
                         electionSendCnt += 1;
@@ -419,9 +421,9 @@ public class Node {
 
     private void election() {
         this.leader = "";
-        if (this.elector == null){
+        if (this.elector == null) {
             this.elector = new Thread(electionWorker());
-            logger.info("election thread start at <{}>", this.hostName);
+            logger.trace("election thread start at <{}>", this.hostName);
             this.elector.start();
         }
     }
@@ -430,7 +432,7 @@ public class Node {
         send(content, this.port, election + ack, "", Instant.now().toString());
         if (this.elector == null) {
             this.elector = new Thread(electionWorker());
-            logger.info("election thread start at <{}>", this.hostName);
+            logger.trace("election (with content) thread start at <{}>", this.hostName);
             this.elector.start();
         }
     }
