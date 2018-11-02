@@ -204,14 +204,16 @@ public class Node {
         return () -> {
             Thread.currentThread().setName("bully_algorithm");
             while (this.leader.equals("")) {
-                this.memberList.forEach((host, time) -> {
+                int electionSendCnt = 0;
+                for (String host: this.memberList.keySet()){
                     if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
                         send(host, this.port, election, this.hostName, Instant.now().toString());
+                        electionSendCnt += 1;
                     }
-                });
+                }
                 this.electionAcked.set(false);
                 util.noExceptionSleep(this.electionPeriod);
-                if (this.electionAcked.get()) {
+                if (this.electionAcked.get() && electionSendCnt != 0) {
                     util.noExceptionSleep(this.electionPeriod);
                 } else {
                     this.leader = this.hostName;
