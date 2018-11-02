@@ -138,7 +138,9 @@ public class Node {
                             break;
                         case "25":
                             ackHandler(25, source);
+                            break;
                         default:
+                            logger.error("Received header: {}",header);
                             throw new RuntimeException("Invalid header");
                     }
                 }
@@ -168,19 +170,19 @@ public class Node {
                     send(keys.get(next2), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
                     try {
-                        Thread.sleep(200);
+                        Thread.sleep(500);
                     } catch (Exception e) {
                     }
                     int i = 0;
-                    for (; i < 3; i++) {
+                    for (; i < 5; i++) {
                         for (String host : this.ackList.keySet()) {
                             if (this.ackList.get(host).equals("f")) {
                                 send(host, this.port, isAlive, "", Instant.now().toString());
-                                logger.info("{}th ping <{}> at <{}>", Integer.toString(i), host, Instant.now());
+                                // logger.info("{}th ping <{}> at <{}>", Integer.toString(i), host, Instant.now());
                             }
                         }
                         try {
-                            Thread.sleep(100);
+                            Thread.sleep(200);
                         } catch (Exception e) {
                         }
                     }
@@ -342,7 +344,7 @@ public class Node {
         }
         //elected gossip
         else if (header == gossip + elected) {
-            if(!this.leader.equals(content));{
+            if(!this.leader.equals(content)) {
                 this.leader = content;
                 gossip(header, content, requestTime, this.gossipRound);
             }
@@ -430,7 +432,7 @@ public class Node {
 
     private void electionHandler(String content){
         send(content, this.port, election + ack, "", Instant.now().toString());
-        if(this.inElection.get()){
+        if(!this.inElection.get()){
             election();
         }
     }
