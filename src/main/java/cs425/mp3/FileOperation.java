@@ -77,11 +77,27 @@ public final class FileOperation {
     }
 
     /**
-     * Just send the file via socket, do nothing with socket
+     * Copy file to a path
      */
-    private void sendFileViaSocket(String filePath, Socket socket) throws IOException {
+    private void localCopyFileToStorage(String originalPath, String newFileName) throws IOException {
+        File dest = new File(Config.STORAGE_PATH, newFileName);
+        File src = new File(originalPath);
+        try (InputStream is = new FileInputStream(src)) {
+            try (OutputStream os = new FileOutputStream(dest)) {
+                bufferedReadWrite(is, os);
+            }
+        }
+    }
+
+    /**
+     * Just send the file via socket, do nothing with socket
+     *
+     * @param originalFilePath File path for the file you want to send
+     * @param socket           A socket connects to remote host
+     */
+    private void sendFileViaSocket(String originalFilePath, Socket socket) throws IOException {
         socket.setSoTimeout(120_000); // 120s timeout
-        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(filePath))) {
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(originalFilePath))) {
             BufferedOutputStream out = new BufferedOutputStream(socket.getOutputStream());
             bufferedReadWrite(in, out);
             logger.info("Finished sending file");
@@ -90,10 +106,14 @@ public final class FileOperation {
 
     /**
      * Receive a file via socket, do nothing with socket
+     *
+     * @param newFileName File name (UUID) of the file
+     * @param socket      A socket produced by ServerSocket.accept()
      */
-    private void readFileViaSocket(String targetPath, Socket socket) throws IOException {
+    private void readFileViaSocket(String newFileName, Socket socket) throws IOException {
+        File dest = new File(Config.STORAGE_PATH, newFileName);
         socket.setSoTimeout(120_000); // 120s timeout
-        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(targetPath))) {
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
             bufferedReadWrite(socket.getInputStream(), bos);
             logger.info("Finished receiving file");
         }
