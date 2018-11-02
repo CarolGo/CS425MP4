@@ -16,12 +16,12 @@ public class Node {
     private final Logger logger = LoggerFactory.getLogger(this.getClass());
 
     private String hostName;
-    private final int port = 8080;
-    private final int TCPPort = 8081;
+    private final int port = Config.UDP_PORT;
+    private final int TCPPort = Config.TCP_PORT;
     private boolean isIntroducer;
     private AtomicBoolean inGroup = new AtomicBoolean(false);
     private AtomicBoolean electionAcked = new AtomicBoolean(false);
-    private final long joinPeriod = 2000;
+    private final long joinPeriod = Config.JOIN_PERIOD;
     private Thread receive;
     private Thread elector;
     //header for different msg types
@@ -33,16 +33,14 @@ public class Node {
     private final int update = 3;
     private final int elected = 4;
     private final int election = 5;
-    private final int gossipRound = 4;  //need gossip 4 rounds to achieve the infection of majority
-    private final int electionPeriod = 200;
+    private final int gossipRound = Config.GOSSIP_ROUND;
+    private final int electionPeriod = Config.ELECTION_PERIOD;
     private Instant lastGossipTime;
     private String leader = "";
     private ConcurrentHashMap<String, String> memberList = new ConcurrentHashMap<>();
     private Thread FD;
     private DatagramSocket ds;
     private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<String, Set<String>> localFileMap = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<String, Set<String>> sdfsFileMap = new ConcurrentHashMap<>();
 
 
     public Node() throws UnknownHostException {
@@ -418,7 +416,7 @@ public class Node {
     }
 
     private void election() {
-        if (this.elector == null){
+        if (this.elector == null) {
             this.leader = "";
             this.elector = new Thread(electionWorker());
             logger.info("election thread start at <{}>", this.hostName);
