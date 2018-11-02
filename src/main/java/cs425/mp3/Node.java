@@ -203,7 +203,6 @@ public class Node {
     private Runnable electionWorker() {
         return () -> {
             Thread.currentThread().setName("bully_algorithm");
-            logger.trace("Current leader is: <{}>", this.leader);
             while (this.leader.equals("")) {
                 logger.info("election routine start at <{}>", this.hostName);
                 int electionSendCnt = 0;
