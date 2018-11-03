@@ -94,6 +94,7 @@ public final class FileOperation {
 
     /**
      * connection to host
+     *
      * @param host
      * @return socket
      */
@@ -102,20 +103,20 @@ public final class FileOperation {
         Socket s = new Socket();
         // Potential higher performance with SO_KA
         s.setKeepAlive(true);
-        s.connect(new InetSocketAddress(host,Config.TCP_PORT), Config.CONNECT_TIMEOUT_SECOND * 1000);
+        s.connect(new InetSocketAddress(host, Config.TCP_PORT), Config.CONNECT_TIMEOUT_SECOND * 1000);
         s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
-        logger.info("Connected to server {}",host);
+        logger.info("Connected to server {}", host);
         return s;
     }
 
     /**
      * Just send the file command via socket, do nothing with socket
      *
-     * @param fc  File path for the file you want to send
-     * @param socket           A socket connects to remote host
+     * @param fc     File path for the file you want to send
+     * @param socket A socket connects to remote host
      */
 
-    private  FileCommandResult sendFileCommandViaSocket(FileCommand fc, Socket socket) throws IOException{
+    private FileCommandResult sendFileCommandViaSocket(FileCommand fc, Socket socket) throws IOException {
         FileCommandResult res = null;
         try {
             // Output goes first or the input will block forever
@@ -127,7 +128,7 @@ public final class FileOperation {
             logger.info("file command sent at '{}'.", fc.getTimestamp());
 
             // Some blocking here for sure
-            res =  FileCommandResult.parseFromStream(in);
+            res = FileCommandResult.parseFromStream(in);
             // Communication finished, notice the sequence
             in.close();
             out.close();
@@ -140,15 +141,15 @@ public final class FileOperation {
 
     }
 
-    private void sendFileCommandResultViaSocket(Socket socket, FileCommandResult fcs){
-        try{
+    private void sendFileCommandResultViaSocket(Socket socket, FileCommandResult fcs) {
+        try {
             ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             out.writeObject(fcs);
             out.flush();
             logger.info("file command result sent at '{}'.", fcs.getTimestamp());
             out.close();
             socket.close();
-        } catch(IOException e){
+        } catch (IOException e) {
             logger.debug("Failed to establish connection");
         }
 
@@ -184,19 +185,18 @@ public final class FileOperation {
     }
 
     /**
-     *
      * @param sdfsFileName SDFS file name
      * @return verision number 0 if not exist, -1 if failure, otherwise latest version number in master node
      */
 
     private FileCommandResult query(String sdfsFileName) {
         String leader = this.node.getLeader();
-        if(!leader.isEmpty()){
-            FileCommand cmd = new FileCommand("query", leader, sdfsFileName,0 );
-            try{
+        if (!leader.isEmpty()) {
+            FileCommand cmd = new FileCommand("query", leader, sdfsFileName, 0);
+            try {
                 Socket s = connectToServer(leader);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
-                if(!res.isHasError()){
+                if (!res.isHasError()) {
                     return res;
                 }
             } catch (IOException e) {
@@ -207,8 +207,6 @@ public final class FileOperation {
         logger.info("leader not elected");
         return null;
     }
-
-
 
 
     private void bufferedReadWrite(InputStream in, OutputStream out, int bSize) throws IOException {
@@ -241,17 +239,17 @@ public final class FileOperation {
                     // Output goes first or the input will block forever
                     ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
                     // Some blocking here for sure
-                    cmd =  FileCommand.parseFromStream(in);
-                    logger.info("file command received from {}.",clientSocket.getInetAddress().getHostName());
+                    cmd = FileCommand.parseFromStream(in);
+                    logger.info("file command received from {}.", clientSocket.getInetAddress().getHostName());
                     // Communication finished, notice the sequence
                     in.close();
-                    switch(cmd.getType()){
+                    switch (cmd.getType()) {
                         case "query":
                             queryHandler(clientSocket, cmd.getFileName());
                     }
                 } catch (ClassNotFoundException e) {
                     logger.error("Client received malformed data!");
-                } catch (IOException e){
+                } catch (IOException e) {
 
                 }
             }
@@ -259,16 +257,16 @@ public final class FileOperation {
         };
     }
 
-    private void queryHandler(Socket socket, String fileName){
+    private void queryHandler(Socket socket, String fileName) {
         int version = 0;
         Set<String> replicaLocations = null;
-        for(String file: this.sdfsFileMap.keySet()){
-            if(file.equals(fileName) && this.sdfsFileMap.get(fileName).getVersion() > version){
+        for (String file : this.sdfsFileMap.keySet()) {
+            if (file.equals(fileName) && this.sdfsFileMap.get(fileName).getVersion() > version) {
                 version = this.sdfsFileMap.get(fileName).getVersion();
                 replicaLocations = this.sdfsFileMap.get(fileName).getReplicaLocations();
             }
         }
-        FileCommandResult fcs = new FileCommandResult(replicaLocations,version);
+        FileCommandResult fcs = new FileCommandResult(replicaLocations, version);
         sendFileCommandResultViaSocket(socket, fcs);
     }
 
