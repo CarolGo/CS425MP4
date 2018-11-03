@@ -4,14 +4,14 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
-import java.util.List;
+import java.util.Set;
 
 public class FileCommandResult implements Serializable {
 
     /**
      * host names for storing and fetch replicas
      */
-    private List<String> replicaNodes;
+    private Set<String> replicaNodes;
     /**
      * Time that this being send
      */
@@ -27,7 +27,7 @@ public class FileCommandResult implements Serializable {
     private int version;
 
 
-    public FileCommandResult(List<String> replicaNodes, int version) {
+    public FileCommandResult(Set<String> replicaNodes, int version) {
         this.replicaNodes = replicaNodes;
         this.version = version;
     }
@@ -40,11 +40,11 @@ public class FileCommandResult implements Serializable {
         return this.timestamp;
     }
 
-    public List<String> getReplicaNodes() {
+    public Set<String> getReplicaNodes() {
         return this.replicaNodes;
     }
 
-    public void setReplicaNodes(List<String> replicaNodes) {
+    public void setReplicaNodes(Set<String> replicaNodes) {
         this.replicaNodes = replicaNodes;
     }
 
