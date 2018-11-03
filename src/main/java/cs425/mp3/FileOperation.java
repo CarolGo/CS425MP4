@@ -131,17 +131,16 @@ public final class FileOperation {
 
     public void get(String sdfsFileName, String localFileName) {
         //try the local file first
-        if(this.localFileMap.get(sdfsFileName) != null){
+        if (this.localFileMap.get(sdfsFileName) != null) {
             logger.info("File found in local machine");
-            try{
+            try {
                 //todo: what is the file path?
                 localCopyFileToStorage(Config.STORAGE_PATH + "/" + this.localFileMap.get(sdfsFileName).getUUID(), localFileName, false);
                 logger.info("Local file <{}> get finished!!!", sdfsFileName);
-            }catch (IOException e){
+            } catch (IOException e) {
                 logger.debug("fail to local get");
             }
-        }
-        else{
+        } else {
             String leader = this.node.getLeader();
             if (leader.isEmpty()) {
                 logger.error("Leader empty, can not get");
@@ -173,18 +172,64 @@ public final class FileOperation {
     }
 
     public void delete(String sdfsFileName) {
-
+        String leader = this.node.getLeader();
+        if (leader.isEmpty()) {
+            logger.error("Leader empty, can not delete");
+            return;
+        } else {
+            try {
+                Socket deleteSocket = connectToServer(leader, Config.TCP_PORT);
+                FileCommandResult result = sendFileCommandViaSocket(new FileCommand("delete", leader, sdfsFileName, 0), deleteSocket);
+                if (result.isHasError()) {
+                    logger.debug("Master delete fail");
+                } else {
+                    logger.info("delete finished!!!");
+                }
+            } catch (IOException e) {
+                logger.debug("Failed to establish connection with <{}>", leader, e);
+            }
+        }
     }
 
     public void listFileLocations(String sdfsFileName) {
+        askBackup();
+        logger.info("All file in SDFS:");
+        for(String file: this.sdfsFileMap.keySet()){
+            int version = this.sdfsFileMap.get(file).getVersion();
+            String replicaNodes = "";
+            for(String replicaNode: this.sdfsFileMap.get(file).getReplicaLocations()){
+                replicaNodes += replicaNode;
+            }
+            logger.info("name:<{}>      version:<{}>        replica hosts:<{}>" , file, version, replicaNodes);
+        }
+    }
 
+    private void askBackup(){
+        String leader = this.node.getLeader();
+        if (leader.isEmpty()) {
+            logger.error("Leader empty, can not list file in SDFS");
+        } else {
+            try {
+                Socket s = connectToServer(leader, Config.TCP_PORT);
+                FileCommandResult result = sendFileCommandViaSocket(new FileCommand("backup", leader, "", 0), s);
+                if (result.isHasError()) {
+                    logger.debug("error when requesting backup");
+                } else {
+                    this.sdfsFileMap = result.getBackup();
+                    logger.info("backup from <{}> finished", leader);
+                }
+            } catch (IOException e) {
+                logger.debug("Fail to establish coonection with <{}>", leader, e);
+            }
+        }
     }
 
     public void listFileLocal() {
+        logger.info("local file includes");
         for (String file : this.localFileMap.keySet()) {
             FileObject fo = this.localFileMap.get(file);
             int version = fo.getVersion();
-            logger.info("local file includes: {}+{}", file, version);
+            logger.info("name: <{}>     verison: <{}>", file, version);
         }
     }
 
@@ -200,13 +245,12 @@ public final class FileOperation {
 
     /**
      * Copy file to a path
-     *
      */
     private void localCopyFileToStorage(String originalPath, String newFileName, Boolean isPut) throws IOException {
         File dest;
-        if (isPut){
+        if (isPut) {
             dest = new File(Config.STORAGE_PATH, newFileName);
-        }else{
+        } else {
             dest = new File(Config.GET_PATH, newFileName);
         }
         logger.debug("Copy file from <{}> to <{}>", originalPath, dest.getAbsolutePath());
@@ -419,6 +463,16 @@ public final class FileOperation {
                     case "get":
                         getHandler(out, cmd, clientSocket.getInetAddress().getHostName());
                         break;
+                    case "delete":
+                        if (this.node.getLeader().equals(this.node.getHostName())) {
+                            masterDeleteHandler(out, cmd, clientSocket.getInetAddress().getHostName());
+                        } else {
+                            memberDeleteHandler(out, cmd, clientSocket.getInetAddress().getHostName());
+                        }
+                        break;
+                    case "backup":
+                        backupHandler(out,clientSocket.getInetAddress().getHostName());
+                        break;
                     default:
                         logger.error("Command type error");
                         break;
@@ -437,29 +491,86 @@ public final class FileOperation {
             }
         };
     }
+    private void backupHandler(ObjectOutputStream out, String requesetHost){
+        if(this.node.getLeader().equals(this.node.getHostName())){
+            FileCommandResult result = new FileCommandResult(null ,0);
+            result.setBackup(this.sdfsFileMap);
+            sendFileCommandResultViaSocket(out, result);
+            logger.info("backup send to <{}>", requesetHost);
+        }else{
+            logger.debug("Wrong backup request received by <{}>", this.node.getHostName());
+        }
+    }
+
+    private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
+        String fileName = cmd.getFileName();
+        FileObject deleteTarget = this.sdfsFileMap.get(fileName);
+        FileCommandResult result = new FileCommandResult(null, 0);
+        ;
+        //check if sdfs has this file
+        if (deleteTarget == null) {
+            sendFileCommandResultViaSocket(out, result);
+        } else {
+            Set<String> replicaNodes = deleteTarget.getReplicaLocations();
+            this.sdfsFileMap.remove(fileName);
+            //ask all members to delete the file
+            for (String host : replicaNodes) {
+                if (host.equals(this.node.getHostName())) {
+                    this.localFileMap.remove(fileName);
+                } else {
+                    try {
+                        Socket s = connectToServer(host, Config.TCP_PORT);
+                        FileCommandResult memberResult = sendFileCommandViaSocket(new FileCommand("delete", host, fileName, 0), s);
+                        if (memberResult.isHasError()) {
+                            logger.debug("Fail to ask node <{}> to delete", host);
+                            result.setHasError(true);
+                        }
+
+                    } catch (IOException e) {
+                        logger.debug("Fail to establish connection with <{}>", host, e);
+                        result.setHasError(true);
+                    }
+                }
+            }
+            logger.info("master delete done");
+            sendFileCommandResultViaSocket(out, result);
+        }
+
+    }
+
+    private void memberDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
+        String fileName = cmd.getFileName();
+        if (this.localFileMap.get(fileName) != null) {
+            this.localFileMap.remove(fileName);
+            sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+            logger.info("delete <{}> requested by master <{}>", fileName, requestHost);
+        } else {
+            sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+        }
+    }
 
 
     private void getHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
         String fileName = cmd.getFileName();
         FileCommandResult result = new FileCommandResult(null, 0);
         FileObject file = this.localFileMap.get(fileName);
-        if (file != null){
+        if (file != null) {
             result.setReplicaNodes(file.getReplicaLocations());
             result.setVersion(file.getVersion());
             sendFileCommandResultViaSocket(out, result);
-            try{
+            try {
                 String UUID = file.getUUID();
                 Socket fileTransferSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
                 //Todo:what is the file path?
-                if (sendFileViaSocket(Config.STORAGE_PATH +"/" + UUID, fileTransferSocket, fileName, result.getVersion())){
+                if (sendFileViaSocket(Config.STORAGE_PATH + "/" + UUID, fileTransferSocket, fileName, result.getVersion())) {
                     logger.info("Requested file send back");
-                }else{
+                } else {
                     logger.debug("Fail to send file");
                 }
-            }catch(IOException e){
+            } catch (IOException e) {
                 logger.debug("Fail to establish connection", e);
             }
-        }else{
+        } else {
             result.setHasError(true);
             logger.info("cannot find file <{}> at <{}>", fileName, this.node.getHostName());
             sendFileCommandResultViaSocket(out, result);
