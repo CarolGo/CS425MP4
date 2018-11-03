@@ -4,6 +4,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.jnlp.FileContents;
+import java.util.Set;
 import java.io.*;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -123,7 +124,7 @@ public final class FileOperation {
 
             out.writeObject(fc);
             out.flush();
-            logger.info("file command sent on '{}'.", fc.getTimestamp());
+            logger.info("file command sent at '{}'.", fc.getTimestamp());
 
             // Some blocking here for sure
             res =  FileCommandResult.parseFromStream(in);
@@ -136,6 +137,20 @@ public final class FileOperation {
             logger.error("Client received malformed data!");
         }
         return res;
+
+    }
+
+    private void sendFileCommandResultViaSocket(Socket socket, FileCommandResult fcs){
+        try{
+            ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
+            out.writeObject(fcs);
+            out.flush();
+            logger.info("file command result sent at '{}'.", fcs.getTimestamp());
+            out.close();
+            socket.close();
+        } catch(IOException e){
+            logger.debug("Failed to establish connection");
+        }
 
     }
 
@@ -171,11 +186,10 @@ public final class FileOperation {
     /**
      *
      * @param sdfsFileName SDFS file name
-     * @return verision number 0 if not exist, otherwise latest version number in master node.
+     * @return verision number 0 if not exist, -1 if failure, otherwise latest version number in master node
      */
 
-    private int query(String sdfsFileName) {
-        int version = -1;
+    private FileCommandResult query(String sdfsFileName) {
         String leader = this.node.getLeader();
         if(!leader.isEmpty()){
             FileCommand cmd = new FileCommand("query", leader, sdfsFileName,0 );
@@ -183,16 +197,15 @@ public final class FileOperation {
                 Socket s = connectToServer(leader);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
                 if(!res.isHasError()){
-                    version = res.getVersion();
-                    return version;
+                    return res;
                 }
             } catch (IOException e) {
                 logger.debug("Failed to establish connection");
-                return version;
+                return null;
             }
         }
         logger.info("leader not elected");
-        return version;
+        return null;
     }
 
 
@@ -223,10 +236,40 @@ public final class FileOperation {
                     logger.error("Server socket failed", e);
                     continue;
                 }
-                // Logic below
+                FileCommand cmd = null;
+                try {
+                    // Output goes first or the input will block forever
+                    ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
+                    // Some blocking here for sure
+                    cmd =  FileCommand.parseFromStream(in);
+                    logger.info("file command received from {}.",clientSocket.getInetAddress().getHostName());
+                    // Communication finished, notice the sequence
+                    in.close();
+                    switch(cmd.getType()){
+                        case "query":
+                            queryHandler(clientSocket, cmd.getFileName());
+                    }
+                } catch (ClassNotFoundException e) {
+                    logger.error("Client received malformed data!");
+                } catch (IOException e){
+
+                }
             }
             logger.info("File server stopped: <{}>", this.serverHostname);
         };
+    }
+
+    private void queryHandler(Socket socket, String fileName){
+        int version = 0;
+        Set<String> replicaLocations = null;
+        for(String file: this.sdfsFileMap.keySet()){
+            if(file.equals(fileName) && this.sdfsFileMap.get(fileName).getVersion() > version){
+                version = this.sdfsFileMap.get(fileName).getVersion();
+                replicaLocations = this.sdfsFileMap.get(fileName).getReplicaLocations();
+            }
+        }
+        FileCommandResult fcs = new FileCommandResult(replicaLocations,version);
+        sendFileCommandResultViaSocket(socket, fcs);
     }
 
 }
