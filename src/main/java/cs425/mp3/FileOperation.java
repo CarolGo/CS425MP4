@@ -12,6 +12,10 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.Collections;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashSet;
 
 /**
  * All operations regarding distributed FS
@@ -293,6 +297,9 @@ public final class FileOperation {
                     case "query":
                         queryHandler(clientSocket, cmd.getFileName());
                         break;
+                    case "put":
+                        putHandler(clientSocket, cmd);
+                        break;
                     default:
                         logger.error("Command type error");
                         break;
@@ -310,6 +317,44 @@ public final class FileOperation {
                 logger.error("Close socket failed", e);
             }
         };
+    }
+
+    private void putHandler(Socket socket, FileCommand cmd){
+        int version = cmd.getVersionNum();
+        String fileName = cmd.getFileName();
+        //store new file
+        if(version == 1){
+            ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
+            Collections.shuffle(hosts);
+            hosts.remove(socket.getInetAddress().getHostName());
+            if(hosts.size() >= 3){
+                Set<String> replicaNodes = new HashSet<>();
+                replicaNodes.add(hosts.get(1));
+                replicaNodes.add(hosts.get(2));
+                replicaNodes.add(hosts.get(0));
+                //set sdfs meta information
+                FileObject newFile = new FileObject(fileName,version);
+                newFile.setReplicaLocations(replicaNodes);
+                this.sdfsFileMap.put(fileName, newFile);
+                //send back fcs
+                FileCommandResult fcs = new FileCommandResult(replicaNodes,version);
+                sendFileCommandResultViaSocket(socket,fcs);
+            }
+            else{
+                logger.info("put handler fail to get node list");
+                FileCommandResult fcs = new FileCommandResult(null,0);
+                fcs.setHasError(false);
+                sendFileCommandResultViaSocket(socket,fcs);
+            }
+        }
+        //update new version
+        else{
+            FileObject oldFile = this.sdfsFileMap.get(fileName);
+            oldFile.setVersion(version);
+            Set<String> replicaNodes = oldFile.getReplicaLocations();
+            FileCommandResult fcs = new FileCommandResult(replicaNodes,version);
+            sendFileCommandResultViaSocket(socket,fcs);
+        }
     }
 
     private void queryHandler(Socket socket, String fileName) {
