@@ -12,12 +12,15 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * All operations regarding distributed FS
  */
 public final class FileOperation {
     private final Logger logger = LoggerFactory.getLogger(FileOperation.class);
+
+    private final AtomicBoolean hasReceivedSuccess = new AtomicBoolean(false);
 
     // Runtime variable
     private final Node node;
@@ -167,9 +170,25 @@ public final class FileOperation {
                     if (getResult.isHasError()) {
                         logger.info("get error with <{}>", host);
                     } else {
+                        long totalSleepingTime = 0;
+                        long timeout = 10_000;
                         //Todo:receive the file and save
-
-                        logger.info("File <{}> get finished!!!", sdfsFileName);
+                        while (!this.hasReceivedSuccess.get() || totalSleepingTime < Config.FILE_RECV_TIMEOUT_MILLSECOND) {
+                            try {
+                                Thread.sleep(timeout);
+                                totalSleepingTime += timeout;
+                            } catch (InterruptedException e) {
+                                logger.error("WTF", e);
+                            }
+                        }
+                        if (this.hasReceivedSuccess.get()) {
+                            logger.info("File <{}> got from <{}>!!!", sdfsFileName, host);
+                            this.hasReceivedSuccess.set(false);
+                            break;
+                        } else {
+                            logger.info("File <{}> get failed", sdfsFileName);
+                            continue;
+                        }
                     }
                 } catch (IOException e) {
                     logger.debug("Failed to establish connection with <{}>", host, e);
@@ -204,17 +223,14 @@ public final class FileOperation {
     public void listFileLocations(String sdfsFileName) {
         askBackup();
         logger.info("All file in SDFS:");
-        for(String file: this.sdfsFileMap.keySet()){
+        for (String file : this.sdfsFileMap.keySet()) {
             int version = this.sdfsFileMap.get(file).getVersion();
-            String replicaNodes = "";
-            for(String replicaNode: this.sdfsFileMap.get(file).getReplicaLocations()){
-                replicaNodes += replicaNode;
-            }
-            logger.info("name:<{}>      version:<{}>        replica hosts:<{}>" , file, version, replicaNodes);
+            logger.info("name:<{}>      version:<{}>        replica hosts:<{}>",
+                    file, version, String.join(", ", this.sdfsFileMap.get(file).getReplicaLocations()));
         }
     }
 
-    private void askBackup(){
+    private void askBackup() {
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
             logger.error("Leader empty, can not list file in SDFS");
@@ -414,6 +430,7 @@ public final class FileOperation {
                     case "get":
                         dest = new File(Config.GET_PATH, sdfsName);
                         saveFileViaSocketInput(dIn, dest);
+                        this.hasReceivedSuccess.set(true);
                         break;
                     default:
                         throw new IOException("Unknown intention");
@@ -421,6 +438,7 @@ public final class FileOperation {
                 logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, socket.getRemoteSocketAddress());
             } catch (IOException e) {
                 logger.error("Receive file failed", e);
+                if (intention.equals("get")) this.hasReceivedSuccess.set(false);
             }
             try {
                 socket.close();
@@ -466,7 +484,7 @@ public final class FileOperation {
                         }
                         break;
                     case "backup":
-                        backupHandler(out,clientSocket.getInetAddress().getHostName());
+                        backupHandler(out, clientSocket.getInetAddress().getHostName());
                         break;
                     default:
                         logger.error("Command type error");
@@ -486,13 +504,14 @@ public final class FileOperation {
             }
         };
     }
-    private void backupHandler(ObjectOutputStream out, String requesetHost){
-        if(this.node.getLeader().equals(this.node.getHostName())){
-            FileCommandResult result = new FileCommandResult(null ,0);
+
+    private void backupHandler(ObjectOutputStream out, String requesetHost) {
+        if (this.node.getLeader().equals(this.node.getHostName())) {
+            FileCommandResult result = new FileCommandResult(null, 0);
             result.setBackup(this.sdfsFileMap);
             sendFileCommandResultViaSocket(out, result);
             logger.info("backup send to <{}>", requesetHost);
-        }else{
+        } else {
             logger.debug("Wrong backup request received by <{}>", this.node.getHostName());
         }
     }

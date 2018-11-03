@@ -33,4 +33,5 @@ public final class Config {
 
     public static final int CONNECT_TIMEOUT_SECOND = 60;
     public static final int RW_TIMEOUT_SECOND = 300;
+    public static final long FILE_RECV_TIMEOUT_MILLSECOND = 120_000;
 }
