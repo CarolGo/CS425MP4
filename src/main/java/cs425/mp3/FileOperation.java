@@ -108,7 +108,11 @@ public final class FileOperation {
                     logger.info("local replication finished");
                     for (String host : res.getReplicaNodes()) {
                         Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
-                        sendFileViaSocket(localFileName, replicaSocket);
+                        if (!sendFileViaSocket(localFileName, replicaSocket, sdfsFileName)) {
+                            // Failed sending file
+                            logger.info("Failed put replica of {} at {}", sdfsFileName, host);
+                            continue;
+                        }
                         logger.info("put replica of {} at {}", sdfsFileName, host);
                         replicaSocket.close();
                     }
@@ -228,28 +232,52 @@ public final class FileOperation {
      *
      * @param originalFilePath File path for the file you want to send
      * @param socket           A socket connects to remote host
+     * @param sdfsName         SDFS name to send to client
+     * @return Is send operation success
      */
-    private void sendFileViaSocket(String originalFilePath, Socket socket) throws IOException {
-        socket.setSoTimeout(120_000); // 120s timeout
-        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(originalFilePath))) {
-            bufferedReadWrite(in, socket.getOutputStream(), Config.NETWORK_BUFFER_SIZE);
-            logger.info("Finished sending file");
+    private boolean sendFileViaSocket(String originalFilePath, Socket socket, String sdfsName) {
+        try {
+            File toSend = new File(originalFilePath);
+            try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSend))) {
+                logger.debug("Sending <{}> to <{}>", originalFilePath, socket.getRemoteSocketAddress());
+                DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
+                dOut.writeUTF(sdfsName);
+                dOut.writeLong(toSend.length());
+                bufferedReadWrite(in, dOut, Config.NETWORK_BUFFER_SIZE);
+            }
+        } catch (IOException e) {
+            logger.error("Fail sending file", e);
+            return false;
         }
+        logger.info("Success sending file");
+        return true;
     }
 
     /**
      * Receive a file via socket, do nothing with socket
      *
-     * @param newFileName File name (UUID) of the file
-     * @param socket      A socket produced by ServerSocket.accept()
+     * @param socket A socket produced by ServerSocket.accept()
      */
-    private void saveFileViaSocket(String newFileName, Socket socket) throws IOException {
-        File dest = new File(Config.STORAGE_PATH, newFileName);
-        socket.setSoTimeout(120_000); // 120s timeout
-        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
-            bufferedReadWrite(socket.getInputStream(), bos, Config.NETWORK_BUFFER_SIZE);
-            logger.info("Finished receiving file <{}>", newFileName);
+    private boolean saveFileViaSocket(Socket socket) {
+        String sdfsName;
+        try {
+            DataInputStream dIn = new DataInputStream(socket.getInputStream());
+            sdfsName = dIn.readUTF();
+            long fileSize = dIn.readLong();
+            System.err.println(sdfsName);
+            System.err.println(fileSize);
+            //TODO: Actual sdfsName should be a UUID, lookup in the HashMap
+            File dest = new File(Config.STORAGE_PATH, sdfsName);
+            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
+                logger.debug("Receiving file <{}>({}b) from <{}>", sdfsName, fileSize, socket.getRemoteSocketAddress());
+                bufferedReadWrite(dIn, bos, Config.NETWORK_BUFFER_SIZE);
+            }
+        } catch (IOException e) {
+            logger.error("Fail receiving file", e);
+            return false;
         }
+        logger.info("Finished receiving file <{}>", sdfsName);
+        return true;
     }
 
     /**
@@ -291,13 +319,17 @@ public final class FileOperation {
     private Runnable mainFileRecvServer(Socket socket) {
         return () -> {
             Thread.currentThread().setName("FS-recv-process");
+            boolean saveStatus = saveFileViaSocket(socket);
             try {
-                //TODO: get from meta data info
-                saveFileViaSocket("test", socket);
                 socket.close();
-                this.localFileMap.put("test", new FileObject("test", 1));
             } catch (IOException e) {
-                logger.error("Receive file failed", e);
+                logger.error("Closing socket failed");
+                return;
+            }
+            if (saveStatus) {
+                // Save FileObject only when operation is successful
+                //TODO: get from meta data info
+                this.localFileMap.put("test", new FileObject("test", 1));
             }
         };
     }
@@ -310,12 +342,11 @@ public final class FileOperation {
             Thread.currentThread().setName("FS-process");
             logger.info("Connection from client <{}>", clientSocket.getRemoteSocketAddress());
             // Logic start
-            FileCommand cmd = null;
             try {
                 // Output goes first or the input will block forever
                 ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
                 ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                cmd = FileCommand.parseFromStream(in);
+                FileCommand cmd = FileCommand.parseFromStream(in);
                 if (cmd == null) {
                     logger.error("FileCommand is null");
                     return;
