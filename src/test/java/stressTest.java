@@ -1,5 +1,6 @@
 import cs425.mp3.Config;
 import cs425.mp3.FileOperation;
+import org.junit.jupiter.api.Test;
 
 import java.net.Socket;
 import java.util.Random;
@@ -11,7 +12,8 @@ public class stressTest {
 
     static Random random = new Random();
 
-    public static void main(String... args) throws Exception {
+    @Test
+    void stress1() throws Exception {
         FileOperation f = new FileOperation(null);
         ExecutorService e = Executors.newFixedThreadPool(5000);
         for (int i = 0; i < 5000; i++) {
