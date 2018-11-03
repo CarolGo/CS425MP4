@@ -221,7 +221,6 @@ public final class FileOperation {
             out.writeObject(fcs);
             out.flush();
             logger.info("file command result sent at '{}'.", fcs.getTimestamp());
-            out.close();
         } catch (IOException e) {
             logger.debug("Failed to establish connection", e);
         }
