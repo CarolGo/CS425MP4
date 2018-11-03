@@ -53,7 +53,6 @@ public class sendRecvTest {
             long fileSize = dIn.readLong();
             System.err.println(sdfsName);
             System.err.println(fileSize);
-            //TODO: Actual sdfsName should be a UUID
             File dest = new File(Config.STORAGE_PATH, sdfsName);
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
                 bufferedReadWrite(dIn, bos, Config.NETWORK_BUFFER_SIZE);

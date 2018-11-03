@@ -1,6 +1,5 @@
 package cs425.mp3;
 
-import java.util.UUID;
 import java.util.Set;
 
 public class FileObject {
@@ -22,10 +21,9 @@ public class FileObject {
     /**
      * Initialize File object
      *
-     * @param fileName Target file name
-     * @param version  Target file version
+     * @param version Target file version
      */
-    public FileObject(String fileName, int version) {
+    public FileObject(int version) {
         this.id = Util.generateUuid();
         this.version = version;
     }
