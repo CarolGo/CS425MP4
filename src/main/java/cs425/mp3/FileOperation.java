@@ -8,14 +8,10 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.Collections;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashSet;
 
 /**
  * All operations regarding distributed FS
@@ -27,20 +23,29 @@ public final class FileOperation {
     private final Node node;
     private final ExecutorService processThread;
     private final ExecutorService singleMainThread;
+    private final ExecutorService processFileRecvThread;
+    private final ExecutorService singleMainRecvThread;
     private final String serverHostname;
     private final ServerSocket serverSocket;
+    private final ServerSocket fileReceiveSocket;
     private boolean isFileServerRunning;
 
     // File meta data
     private ConcurrentHashMap<String, FileObject> localFileMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
+    // Cached for writing file
+    private FileObject fileObjectCache;
+
     public FileOperation(Node n) throws IOException {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
         this.serverSocket = new ServerSocket(Config.TCP_PORT);
+        this.fileReceiveSocket = new ServerSocket(Config.TCP_FILE_TRANS_PORT);
         this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+        this.processFileRecvThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.singleMainThread = Executors.newSingleThreadExecutor();
+        this.singleMainRecvThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
         this.singleMainThread.submit(() -> {
             Thread.currentThread().setName("FS-main");
@@ -54,14 +59,29 @@ public final class FileOperation {
                 }
             }
         });
+        this.singleMainRecvThread.submit(() -> {
+            Thread.currentThread().setName("FS-recv-main");
+            logger.info("File receive server started listening on <{}>...", this.serverHostname);
+            while (this.isFileServerRunning) {
+                try {
+                    if (this.fileReceiveSocket.isClosed()) continue;
+                    this.processFileRecvThread.submit(this.mainFileRecvServer(this.fileReceiveSocket.accept()));
+                } catch (IOException e) {
+                    logger.error("Server socket failed", e);
+                }
+            }
+        });
     }
 
     public void stopServer() {
         this.isFileServerRunning = false;
         this.processThread.shutdown();
+        this.processFileRecvThread.shutdown();
         this.singleMainThread.shutdown();
+        this.singleMainRecvThread.shutdown();
         try {
             this.serverSocket.close();
+            this.fileReceiveSocket.close();
             logger.info("File server stopped listening...");
         } catch (IOException e) {
             logger.error("Server socket failed to close", e);
@@ -235,7 +255,7 @@ public final class FileOperation {
         socket.setSoTimeout(120_000); // 120s timeout
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
             bufferedReadWrite(socket.getInputStream(), bos, Config.NETWORK_BUFFER_SIZE);
-            logger.info("Finished receiving file");
+            logger.info("Finished receiving file <{}>", newFileName);
         }
     }
 
@@ -271,6 +291,23 @@ public final class FileOperation {
             out.write(buf, 0, len);
         }
         out.flush();
+    }
+
+    /**
+     * Receive a file via socket
+     */
+    private Runnable mainFileRecvServer(Socket socket) {
+        return () -> {
+            Thread.currentThread().setName("FS-recv-process");
+            try {
+                //TODO: get from meta data info
+                saveFileViaSocket("test", socket);
+                socket.close();
+                this.localFileMap.put("test", new FileObject("test", 1));
+            } catch (IOException e) {
+                logger.error("Receive file failed", e);
+            }
+        };
     }
 
     /**

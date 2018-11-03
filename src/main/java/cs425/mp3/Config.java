@@ -17,6 +17,8 @@ public final class Config {
      */
     public static final int TCP_PORT = 18081;
 
+    public static final int TCP_FILE_TRANS_PORT = 18082;
+
     public static final int NETWORK_BUFFER_SIZE = 1350;
 
     public static final long JOIN_PERIOD = 2000;
