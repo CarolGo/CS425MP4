@@ -5,6 +5,7 @@ import java.net.Socket;
 import java.util.Random;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 public class stressTest {
 
@@ -28,7 +29,7 @@ public class stressTest {
             });
         }
         e.shutdown();
-        Thread.sleep(2000);
+        e.awaitTermination(100, TimeUnit.SECONDS);
         System.err.println("Finished");
         f.stopServer();
     }

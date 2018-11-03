@@ -42,12 +42,12 @@ public final class FileOperation {
             logger.info("File server started listening on <{}>...", this.serverHostname);
             while (this.isFileServerRunning) {
                 try {
+                    if (this.serverSocket.isClosed()) continue;
                     this.processThread.submit(this.mainFileServer(this.serverSocket.accept()));
                 } catch (IOException e) {
                     logger.error("Server socket failed", e);
                 }
             }
-            logger.info("File server stopped listening...");
         });
     }
 
@@ -55,6 +55,12 @@ public final class FileOperation {
         this.isFileServerRunning = false;
         this.processThread.shutdown();
         this.singleMainThread.shutdown();
+        try {
+            this.serverSocket.close();
+            logger.info("File server stopped listening...");
+        } catch (IOException e) {
+            logger.error("Server socket failed to close", e);
+        }
     }
 
     public void put(String localFileName, String sdfsFileName) {
