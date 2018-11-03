@@ -81,7 +81,11 @@ public final class FileOperation {
     }
 
     public void listFileLocal() {
-
+        for (String file : this.localFileMap.keySet()) {
+            FileObject fo = this.localFileMap.get(file);
+            int version = fo.getVersion();
+            logger.info("local file includes: {}+{}", version, fo.getPath());
+        }
     }
 
     public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
