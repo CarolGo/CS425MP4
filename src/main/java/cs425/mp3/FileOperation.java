@@ -230,7 +230,7 @@ public final class FileOperation {
      * @param newFileName File name (UUID) of the file
      * @param socket      A socket produced by ServerSocket.accept()
      */
-    private void readFileViaSocket(String newFileName, Socket socket) throws IOException {
+    private void saveFileViaSocket(String newFileName, Socket socket) throws IOException {
         File dest = new File(Config.STORAGE_PATH, newFileName);
         socket.setSoTimeout(120_000); // 120s timeout
         try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
