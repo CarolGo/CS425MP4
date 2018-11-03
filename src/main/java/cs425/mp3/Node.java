@@ -432,4 +432,9 @@ public class Node {
     public String getLeader() {
         return leader;
     }
+
+    public String[] getNodesArray(){
+        String[] arr = this.memberList.keySet().toArray(new String[this.memberList.size()]);
+        return arr;
+    }
 }
