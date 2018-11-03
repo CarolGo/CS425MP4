@@ -5,6 +5,7 @@ import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class FileCommandResult implements Serializable {
 
@@ -22,9 +23,14 @@ public class FileCommandResult implements Serializable {
     private boolean hasError = false;
 
     /**
-     * version for a file 0 if not exist
+     * version for a file
      */
     private int version;
+
+    /**
+     * backup file map
+     */
+    private ConcurrentHashMap<String, FileObject> backup;
 
 
     public FileCommandResult(Set<String> replicaNodes, int version) {
@@ -70,5 +76,11 @@ public class FileCommandResult implements Serializable {
         return null;
     }
 
+    public ConcurrentHashMap<String, FileObject> getBackup() {
+        return backup;
+    }
 
+    public void setBackup(ConcurrentHashMap<String, FileObject> backup) {
+        this.backup = backup;
+    }
 }
