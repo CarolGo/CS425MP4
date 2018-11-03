@@ -1,8 +1,9 @@
 package cs425.mp3;
 
+import java.io.Serializable;
 import java.util.Set;
 
-public class FileObject {
+public class FileObject implements Serializable {
 
     /**
      * name of the file

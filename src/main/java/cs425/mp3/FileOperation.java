@@ -174,9 +174,9 @@ public final class FileOperation {
                         logger.info("get error with <{}>", host);
                     } else {
                         long totalSleepingTime = 0;
-                        long timeout = 10_000;
+                        long timeout = 100;
                         //Todo:receive the file and save
-                        while (!this.hasReceivedSuccess.get() || totalSleepingTime < Config.FILE_RECV_TIMEOUT_MILLSECOND) {
+                        while (!this.hasReceivedSuccess.get() && totalSleepingTime < Config.FILE_RECV_TIMEOUT_MILLSECOND) {
                             try {
                                 Thread.sleep(timeout);
                                 totalSleepingTime += timeout;
@@ -189,7 +189,7 @@ public final class FileOperation {
                             this.hasReceivedSuccess.set(false);
                             break;
                         } else {
-                            logger.info("File <{}> get failed", sdfsFileName);
+                            logger.info("File <{}> get failed from <{}>", sdfsFileName, host);
                             continue;
                         }
                     }
@@ -224,13 +224,13 @@ public final class FileOperation {
     }
 
     public void listFileLocations(String sdfsFileName) {
-        if(!this.node.getLeader().equals(this.node.getHostName())){
+        if (!this.node.getLeader().equals(this.node.getHostName())) {
             askBackup();
         }
         FileObject file = this.sdfsFileMap.get(sdfsFileName);
-        if(file == null){
+        if (file == null) {
             logger.info("<{}> not stored", sdfsFileName);
-        }else{
+        } else {
             logger.info(String.join(",", file.getReplicaLocations()));
         }
     }
@@ -416,13 +416,14 @@ public final class FileOperation {
         return () -> {
             Thread.currentThread().setName("FS-recv-process");
             String intention = "";
+            String remoteHn = socket.getInetAddress().getHostName();
             try {
                 DataInputStream dIn = new DataInputStream(socket.getInputStream());
                 intention = dIn.readUTF();
                 String sdfsName = dIn.readUTF();
                 int fileVersion = dIn.readInt();
                 long fileSize = dIn.readLong();
-                logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, socket.getRemoteSocketAddress());
+                logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
                 File dest;
                 switch (intention) {
                     case "put":
@@ -440,7 +441,7 @@ public final class FileOperation {
                     default:
                         throw new IOException("Unknown intention");
                 }
-                logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, socket.getRemoteSocketAddress());
+                logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
             } catch (IOException e) {
                 logger.error("Receive file failed", e);
                 if (intention.equals("get")) this.hasReceivedSuccess.set(false);

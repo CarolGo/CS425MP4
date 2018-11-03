@@ -19,6 +19,8 @@ public class App {
         String cmd;
         Node node = new Node();
         FileOperation fOper = new FileOperation(node);
+        //TODO: Remove when FSO good
+        node.join();
         while (true) {
             logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions): ");
             cmd = input.nextLine();
