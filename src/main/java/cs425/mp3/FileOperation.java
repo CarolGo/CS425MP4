@@ -208,7 +208,29 @@ public final class FileOperation {
         if (leader.isEmpty()) {
             logger.error("Leader empty, can not delete");
             return;
-        } else {
+        }
+        //leader delete
+        if (this.node.getHostName().equals(leader)) {
+            FileObject file = this.sdfsFileMap.get(sdfsFileName);
+            if (file == null) {
+                logger.info("delete finished");
+            } else {
+                this.sdfsFileMap.remove(sdfsFileName);
+                for (String host : file.getReplicaLocations()) {
+                    try {
+                        Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
+                        FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
+                        if (res.isHasError()) {
+                            logger.debug("Fail to ask node <{}> to delete", host);
+                        }
+                    } catch (IOException e) {
+                        logger.debug("Failed to establish connection with <{}>", host, e);
+                    }
+
+                }
+                logger.info("delete finished");
+            }
+        } else {   //member delete
             try {
                 Socket deleteSocket = connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult result = sendFileCommandViaSocket(new FileCommand("delete", leader, sdfsFileName, 0), deleteSocket);
@@ -224,13 +246,13 @@ public final class FileOperation {
     }
 
     public void listFileLocations(String sdfsFileName) {
-        if(!this.node.getLeader().equals(this.node.getHostName())){
+        if (!this.node.getLeader().equals(this.node.getHostName())) {
             askBackup();
         }
         FileObject file = this.sdfsFileMap.get(sdfsFileName);
-        if(file == null){
+        if (file == null) {
             logger.info("<{}> not stored", sdfsFileName);
-        }else{
+        } else {
             logger.info(String.join(",", file.getReplicaLocations()));
         }
     }
