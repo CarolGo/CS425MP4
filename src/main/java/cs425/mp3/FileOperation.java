@@ -99,7 +99,7 @@ public final class FileOperation {
             int newVersion = queryResault.getVersion() + 1;
             FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
             try {
-                Socket s = connectToServer(leader);
+                Socket s = connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
                 if (!res.isHasError()) {
                     logger.info("master put error");
@@ -107,7 +107,7 @@ public final class FileOperation {
                     localCopyFileToStorage(localFileName, sdfsFileName);
                     logger.info("local replication finished");
                     for (String host : res.getReplicaNodes()) {
-                        Socket replicaSocket = connectToServer(host);
+                        Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
                         sendFileViaSocket(localFileName, replicaSocket);
                         logger.info("put replica of {} at {}", sdfsFileName, host);
                     }
@@ -174,11 +174,11 @@ public final class FileOperation {
      * @return socket
      */
 
-    private Socket connectToServer(String host) throws IOException {
+    private Socket connectToServer(String host, int port) throws IOException {
         Socket s = new Socket();
         // Potential higher performance with SO_KA
         s.setKeepAlive(true);
-        s.connect(new InetSocketAddress(host, Config.TCP_PORT), Config.CONNECT_TIMEOUT_SECOND * 1000);
+        s.connect(new InetSocketAddress(host, port), Config.CONNECT_TIMEOUT_SECOND * 1000);
         s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
         logger.info("Connected to server {}", host);
         return s;
@@ -266,7 +266,7 @@ public final class FileOperation {
         if (!leader.isEmpty()) {
             FileCommand cmd = new FileCommand("query", leader, sdfsFileName, 0);
             try {
-                Socket s = connectToServer(leader);
+                Socket s = connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
                 if (!res.isHasError()) {
                     return res;

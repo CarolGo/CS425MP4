@@ -8,7 +8,7 @@ public class FileObject {
     /**
      * name of the file
      */
-    private UUID id;
+    private String id;
 
     /**
      * version of the file
@@ -22,23 +22,23 @@ public class FileObject {
      * local path for the file. empty when remote
      */
     private String path;
+
     /**
      * Initialize File object
      *
-     * @param fileName   Target file name
-     * @param version Target file version
+     * @param fileName Target file name
+     * @param version  Target file version
      */
-    public FileObject(String fileName, int version){
-        this.id = UUID.fromString(fileName);
+    public FileObject(String fileName, int version) {
+        this.id = Util.generateUuid();
         this.version = version;
     }
 
     /**
-     *
      * @return UUID of the file
      */
 
-    public UUID getUUID(){
+    public String getUUID() {
         return this.id;
     }
 
