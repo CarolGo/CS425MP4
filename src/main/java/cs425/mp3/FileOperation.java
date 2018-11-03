@@ -34,10 +34,6 @@ public final class FileOperation {
     private ConcurrentHashMap<String, FileObject> localFileMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
-    // Cached for writing file
-    private String fileNameCahce;
-    private FileObject fileObjectCache;
-
     public FileOperation(Node n) throws IOException {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
@@ -131,17 +127,17 @@ public final class FileOperation {
 
     public void get(String sdfsFileName, String localFileName) {
         //try the local file first
-        if(this.localFileMap.get(sdfsFileName) != null){
+        if (this.localFileMap.get(sdfsFileName) != null) {
             logger.info("File found in local machine");
-            try{
+            try {
                 //todo: what is the file path?
                 localCopyFileToStorage(Config.STORAGE_PATH + "/" + this.localFileMap.get(sdfsFileName).getUUID(), localFileName, false);
                 logger.info("Local file <{}> get finished!!!", sdfsFileName);
-            }catch (IOException e){
+                return;
+            } catch (IOException e) {
                 logger.debug("fail to local get");
             }
-        }
-        else{
+        } else {
             String leader = this.node.getLeader();
             if (leader.isEmpty()) {
                 logger.error("Leader empty, can not get");
@@ -200,13 +196,12 @@ public final class FileOperation {
 
     /**
      * Copy file to a path
-     *
      */
     private void localCopyFileToStorage(String originalPath, String newFileName, Boolean isPut) throws IOException {
         File dest;
-        if (isPut){
+        if (isPut) {
             dest = new File(Config.STORAGE_PATH, newFileName);
-        }else{
+        } else {
             dest = new File(Config.GET_PATH, newFileName);
         }
         logger.debug("Copy file from <{}> to <{}>", originalPath, dest.getAbsolutePath());
@@ -313,11 +308,7 @@ public final class FileOperation {
             sdfsName = dIn.readUTF();
             version = dIn.readInt();
             long fileSize = dIn.readLong();
-            System.err.println(sdfsName);
-            System.err.println(fileSize);
-            this.fileObjectCache = new FileObject(sdfsName, version);
-            this.fileNameCahce = sdfsName;
-            File dest = new File(Config.STORAGE_PATH, this.fileObjectCache.getUUID());
+            File dest = new File(Config.STORAGE_PATH, sdfsName);
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
                 logger.debug("Receiving file <{}>({}b) of version <{}> from <{}>", sdfsName, fileSize, version, socket.getRemoteSocketAddress());
                 bufferedReadWrite(dIn, bos, Config.NETWORK_BUFFER_SIZE);
@@ -368,23 +359,16 @@ public final class FileOperation {
      */
     private Runnable mainFileRecvServer(Socket socket) {
         return () -> {
-            boolean saveStatus = false;
             Thread.currentThread().setName("FS-recv-process");
-            if (this.fileObjectCache == null && this.fileNameCahce == "") {
-                saveStatus = saveFileViaSocket(socket);
-            } else {
-                logger.debug("file cache occupied");
-            }
+            boolean saveStatus = saveFileViaSocket(socket);
             try {
                 socket.close();
             } catch (IOException e) {
                 logger.error("Closing socket failed");
-                return;
             }
             if (saveStatus) {
-                this.localFileMap.put(this.fileNameCahce, this.fileObjectCache);
-                this.fileObjectCache = null;
-                this.fileNameCahce = "";
+                // TODO: Extract FO from save file
+                // this.localFileMap.put(this.fileNameCahce, this.fileObjectCache);
             } else {
                 logger.debug("file save failed");
             }
@@ -443,23 +427,23 @@ public final class FileOperation {
         String fileName = cmd.getFileName();
         FileCommandResult result = new FileCommandResult(null, 0);
         FileObject file = this.localFileMap.get(fileName);
-        if (file != null){
+        if (file != null) {
             result.setReplicaNodes(file.getReplicaLocations());
             result.setVersion(file.getVersion());
             sendFileCommandResultViaSocket(out, result);
-            try{
+            try {
                 String UUID = file.getUUID();
                 Socket fileTransferSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
                 //Todo:what is the file path?
-                if (sendFileViaSocket(Config.STORAGE_PATH +"/" + UUID, fileTransferSocket, fileName, result.getVersion())){
+                if (sendFileViaSocket(Config.STORAGE_PATH + "/" + UUID, fileTransferSocket, fileName, result.getVersion())) {
                     logger.info("Requested file send back");
-                }else{
+                } else {
                     logger.debug("Fail to send file");
                 }
-            }catch(IOException e){
+            } catch (IOException e) {
                 logger.debug("Fail to establish connection", e);
             }
-        }else{
+        } else {
             result.setHasError(true);
             logger.info("cannot find file <{}> at <{}>", fileName, this.node.getHostName());
             sendFileCommandResultViaSocket(out, result);
