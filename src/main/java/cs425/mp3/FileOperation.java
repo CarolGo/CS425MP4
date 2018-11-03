@@ -35,6 +35,7 @@ public final class FileOperation {
     private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
     // Cached for writing file
+    private String fileNameCahce;
     private FileObject fileObjectCache;
 
     public FileOperation(Node n) throws IOException {
@@ -108,7 +109,7 @@ public final class FileOperation {
                     logger.info("local replication finished");
                     for (String host : res.getReplicaNodes()) {
                         Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
-                        if (!sendFileViaSocket(localFileName, replicaSocket, sdfsFileName)) {
+                        if (!sendFileViaSocket(localFileName, replicaSocket, sdfsFileName, newVersion)) {
                             // Failed sending file
                             logger.info("Failed put replica of {} at {}", sdfsFileName, host);
                             continue;
@@ -235,13 +236,14 @@ public final class FileOperation {
      * @param sdfsName         SDFS name to send to client
      * @return Is send operation success
      */
-    private boolean sendFileViaSocket(String originalFilePath, Socket socket, String sdfsName) {
+    private boolean sendFileViaSocket(String originalFilePath, Socket socket, String sdfsName, int version) {
         try {
             File toSend = new File(originalFilePath);
             try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSend))) {
                 logger.debug("Sending <{}> to <{}>", originalFilePath, socket.getRemoteSocketAddress());
                 DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
                 dOut.writeUTF(sdfsName);
+                dOut.writeInt(version);
                 dOut.writeLong(toSend.length());
                 bufferedReadWrite(in, dOut, Config.NETWORK_BUFFER_SIZE);
             }
@@ -260,23 +262,26 @@ public final class FileOperation {
      */
     private boolean saveFileViaSocket(Socket socket) {
         String sdfsName;
+        int version;
         try {
             DataInputStream dIn = new DataInputStream(socket.getInputStream());
             sdfsName = dIn.readUTF();
+            version = dIn.readInt();
             long fileSize = dIn.readLong();
             System.err.println(sdfsName);
             System.err.println(fileSize);
-            //TODO: Actual sdfsName should be a UUID, lookup in the HashMap
-            File dest = new File(Config.STORAGE_PATH, sdfsName);
+            this.fileObjectCache = new FileObject(sdfsName, version);
+            this.fileNameCahce = sdfsName;
+            File dest = new File(Config.STORAGE_PATH, this.fileObjectCache.getUUID());
             try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
-                logger.debug("Receiving file <{}>({}b) from <{}>", sdfsName, fileSize, socket.getRemoteSocketAddress());
+                logger.debug("Receiving file <{}>({}b) of version <{}> from <{}>", sdfsName, fileSize, version, socket.getRemoteSocketAddress());
                 bufferedReadWrite(dIn, bos, Config.NETWORK_BUFFER_SIZE);
             }
         } catch (IOException e) {
             logger.error("Fail receiving file", e);
             return false;
         }
-        logger.info("Finished receiving file <{}>", sdfsName);
+        logger.info("Finished receiving file <{}> of version <{}>", sdfsName, version);
         return true;
     }
 
@@ -318,8 +323,13 @@ public final class FileOperation {
      */
     private Runnable mainFileRecvServer(Socket socket) {
         return () -> {
+            boolean saveStatus = false;
             Thread.currentThread().setName("FS-recv-process");
-            boolean saveStatus = saveFileViaSocket(socket);
+            if (this.fileObjectCache == null && this.fileNameCahce == "") {
+                saveStatus = saveFileViaSocket(socket);
+            } else {
+                logger.debug("file cache occupied");
+            }
             try {
                 socket.close();
             } catch (IOException e) {
@@ -327,9 +337,11 @@ public final class FileOperation {
                 return;
             }
             if (saveStatus) {
-                // Save FileObject only when operation is successful
-                //TODO: get from meta data info
-                this.localFileMap.put("test", new FileObject("test", 1));
+                this.localFileMap.put(this.fileNameCahce, this.fileObjectCache);
+                this.fileObjectCache = null;
+                this.fileNameCahce = "";
+            } else {
+                logger.debug("file save failed");
             }
         };
     }
@@ -428,5 +440,6 @@ public final class FileOperation {
         FileCommandResult fcs = new FileCommandResult(replicaLocations, version);
         sendFileCommandResultViaSocket(out, fcs);
     }
+
 
 }
