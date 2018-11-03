@@ -73,15 +73,19 @@ public class App {
      * Init the runtime env
      */
     private static void initEnv() {
-        File f = new File(Config.STORAGE_PATH);
+        safeMkdirs(new File(Config.STORAGE_PATH));
+        safeMkdirs(new File(Config.GET_PATH));
+        logger.info("Started at {}...", LocalDateTime.now());
+    }
+
+    private static void safeMkdirs(File f) {
         if (!f.exists()) {
             logger.debug("Creating storage folder...");
             if (!f.mkdirs()) {
-                logger.error("Error creating storage path: {}", Config.STORAGE_PATH);
+                logger.error("Error creating storage path: {}", f.getAbsolutePath());
                 System.exit(-1);
             }
         }
-        logger.info("Started at {}...", LocalDateTime.now());
     }
 
 }
