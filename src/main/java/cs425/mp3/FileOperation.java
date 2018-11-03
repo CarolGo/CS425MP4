@@ -101,7 +101,7 @@ public final class FileOperation {
             try {
                 Socket s = connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
-                if (!res.isHasError()) {
+                if (res.isHasError()) {
                     logger.info("master put error");
                 } else {
                     localCopyFileToStorage(localFileName, sdfsFileName);
@@ -110,6 +110,7 @@ public final class FileOperation {
                         Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
                         sendFileViaSocket(localFileName, replicaSocket);
                         logger.info("put replica of {} at {}", sdfsFileName, host);
+                        replicaSocket.close();
                     }
                     logger.info("put finished");
                 }
@@ -169,11 +170,7 @@ public final class FileOperation {
 
     /**
      * connection to host
-     *
-     * @param host
-     * @return socket
      */
-
     private Socket connectToServer(String host, int port) throws IOException {
         Socket s = new Socket();
         // Potential higher performance with SO_KA
@@ -190,7 +187,6 @@ public final class FileOperation {
      * @param fc     File path for the file you want to send
      * @param socket A socket connects to remote host
      */
-
     private FileCommandResult sendFileCommandViaSocket(FileCommand fc, Socket socket) throws IOException {
         FileCommandResult res = null;
         try {
@@ -260,7 +256,6 @@ public final class FileOperation {
      * @param sdfsFileName SDFS file name
      * @return verision number 0 if not exist, -1 if failure, otherwise latest version number in master node
      */
-
     private FileCommandResult query(String sdfsFileName) {
         String leader = this.node.getLeader();
         if (!leader.isEmpty()) {
