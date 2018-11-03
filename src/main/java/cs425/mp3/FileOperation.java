@@ -253,7 +253,7 @@ public final class FileOperation {
         if (file == null) {
             logger.info("<{}> not stored", sdfsFileName);
         } else {
-            logger.info(String.join(",", file.getReplicaLocations()));
+            logger.info(String.join(", ", file.getReplicaLocations()));
         }
     }
 
@@ -548,7 +548,6 @@ public final class FileOperation {
         String fileName = cmd.getFileName();
         FileObject deleteTarget = this.sdfsFileMap.get(fileName);
         FileCommandResult result = new FileCommandResult(null, 0);
-        ;
         //check if sdfs has this file
         if (deleteTarget == null) {
             sendFileCommandResultViaSocket(out, result);
@@ -626,6 +625,7 @@ public final class FileOperation {
             hosts.remove(clientHostname);
             if (hosts.size() >= 3) {
                 Set<String> replicaNodes = new HashSet<>();
+                replicaNodes.add(clientHostname);
                 replicaNodes.add(hosts.get(1));
                 replicaNodes.add(hosts.get(2));
                 replicaNodes.add(hosts.get(0));
