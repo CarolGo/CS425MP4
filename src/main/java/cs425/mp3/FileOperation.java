@@ -101,6 +101,7 @@ public final class FileOperation {
         FileCommandResult queryResault = query(sdfsFileName);
         if (queryResault != null && queryResault.getVersion() >= 0) {
             int newVersion = queryResault.getVersion() + 1;
+            FileObject fo = new FileObject(newVersion);
             FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
             FileCommandResult res = null;
             try {
@@ -110,7 +111,8 @@ public final class FileOperation {
                     logger.info("master put error");
                     return;
                 }
-                localCopyFileToStorage(new File(localFileName), sdfsFileName, true);
+                localCopyFileToStorage(new File(localFileName), fo.getUUID(), true);
+                this.localFileMap.put(sdfsFileName, fo);
                 logger.info("local replication finished");
             } catch (IOException e) {
                 logger.debug("Failed to put", e);
@@ -124,10 +126,11 @@ public final class FileOperation {
                 Socket replicaSocket;
                 try {
                     replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
-                    File toSend = new File(Config.STORAGE_PATH, localFileName);
+                    File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
                     sendFileViaSocket(toSend, replicaSocket, sdfsFileName, newVersion, "put");
                 } catch (IOException e) {
                     logger.info("Failed put replica of {} at {}", sdfsFileName, host);
+                    logger.error("Reason for failure: ", e);
                     continue;
                 }
                 try {
