@@ -34,10 +34,6 @@ public final class FileOperation {
     private ConcurrentHashMap<String, FileObject> localFileMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
 
-    // Cached for writing file
-    private String fileNameCahce;
-    private FileObject fileObjectCache;
-
     public FileOperation(Node n) throws IOException {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
@@ -48,6 +44,10 @@ public final class FileOperation {
         this.singleMainThread = Executors.newSingleThreadExecutor();
         this.singleMainRecvThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
+        initialMainThreadsJob();
+    }
+
+    private void initialMainThreadsJob() {
         this.singleMainThread.submit(() -> {
             Thread.currentThread().setName("FS-main");
             logger.info("File server started listening on <{}>...", this.serverHostname);
@@ -56,7 +56,7 @@ public final class FileOperation {
                     if (this.serverSocket.isClosed()) continue;
                     this.processThread.submit(this.mainFileServer(this.serverSocket.accept()));
                 } catch (IOException e) {
-                    logger.error("Server socket failed", e);
+                    logger.error("Main socket failed", e);
                 }
             }
         });
@@ -68,7 +68,7 @@ public final class FileOperation {
                     if (this.fileReceiveSocket.isClosed()) continue;
                     this.processFileRecvThread.submit(this.mainFileRecvServer(this.fileReceiveSocket.accept()));
                 } catch (IOException e) {
-                    logger.error("Server socket failed", e);
+                    logger.error("File socket failed", e);
                 }
             }
         });
@@ -99,75 +99,85 @@ public final class FileOperation {
         if (queryResault != null && queryResault.getVersion() >= 0) {
             int newVersion = queryResault.getVersion() + 1;
             FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
+            FileCommandResult res = null;
             try {
                 Socket s = connectToServer(leader, Config.TCP_PORT);
-                FileCommandResult res = sendFileCommandViaSocket(cmd, s);
+                res = sendFileCommandViaSocket(cmd, s);
                 if (res.isHasError()) {
                     logger.info("master put error");
-                } else {
-                    localCopyFileToStorage(localFileName, sdfsFileName, true);
-                    logger.info("local replication finished");
-                    for (String host : res.getReplicaNodes()) {
-                        Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
-                        if (!sendFileViaSocket(localFileName, replicaSocket, sdfsFileName, newVersion)) {
-                            // Failed sending file
-                            logger.info("Failed put replica of {} at {}", sdfsFileName, host);
-                            continue;
-                        }
-                        logger.info("put replica of {} at {}", sdfsFileName, host);
-                        replicaSocket.close();
-                    }
-                    logger.info("put finished!!!");
+                    return;
                 }
+                localCopyFileToStorage(new File(localFileName), sdfsFileName, true);
+                logger.info("local replication finished");
             } catch (IOException e) {
-                logger.debug("Failed to establish connection", e);
-
+                logger.debug("Failed to put", e);
+            }
+            if (res == null) {
+                logger.error("FileCommandResult is null");
+                return;
+            }
+            for (String host : res.getReplicaNodes()) {
+                //TODO: Multi-thread send?
+                Socket replicaSocket;
+                try {
+                    replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
+                    File toSend = new File(Config.STORAGE_PATH, localFileName);
+                    sendFileViaSocket(toSend, replicaSocket, sdfsFileName, newVersion, "put");
+                } catch (IOException e) {
+                    logger.info("Failed put replica of {} at {}", sdfsFileName, host);
+                    continue;
+                }
+                try {
+                    replicaSocket.close();
+                    logger.info("Success put replica of {} at {}", sdfsFileName, host);
+                } catch (IOException e) {
+                    logger.error("Replica socket close failed", e);
+                }
             }
         } else {
             logger.info("Failure on query in put operation");
         }
-
     }
 
     public void get(String sdfsFileName, String localFileName) {
         //try the local file first
         if (this.localFileMap.get(sdfsFileName) != null) {
-            logger.info("File found in local machine");
+            logger.info("File <{}> found in local machine", sdfsFileName);
             try {
-                //todo: what is the file path?
-                localCopyFileToStorage(Config.STORAGE_PATH + "/" + this.localFileMap.get(sdfsFileName).getUUID(), localFileName, false);
-                logger.info("Local file <{}> get finished!!!", sdfsFileName);
+                File localPath = new File(Config.STORAGE_PATH, this.localFileMap.get(sdfsFileName).getUUID());
+                localCopyFileToStorage(localPath, localFileName, false);
+                logger.info("Local file <{}> got!!!", sdfsFileName);
             } catch (IOException e) {
-                logger.debug("fail to local get");
+                logger.debug("fail for local get");
+            }
+            return;
+        }
+        // Not in local, get from Master
+        String leader = this.node.getLeader();
+        if (leader.isEmpty()) {
+            logger.error("Leader empty, can not get");
+            return;
+        }
+        FileCommandResult queryResault = query(sdfsFileName);
+        if (queryResault != null && queryResault.getVersion() >= 0) {
+            for (String host : queryResault.getReplicaNodes()) {
+                try {
+                    Socket getSocket = connectToServer(host, Config.TCP_PORT);
+                    FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", host, sdfsFileName, 0), getSocket);
+                    if (getResult.isHasError()) {
+                        logger.info("get error with <{}>", host);
+                    } else {
+                        //Todo:receive the file and save
+
+                        logger.info("File <{}> get finished!!!", sdfsFileName);
+                    }
+                } catch (IOException e) {
+                    logger.debug("Failed to establish connection with <{}>", host, e);
+                }
+
             }
         } else {
-            String leader = this.node.getLeader();
-            if (leader.isEmpty()) {
-                logger.error("Leader empty, can not get");
-                return;
-            }
-            FileCommandResult queryResault = query(sdfsFileName);
-            if (queryResault != null && queryResault.getVersion() >= 0) {
-                for (String host : queryResault.getReplicaNodes()) {
-                    try {
-                        Socket getSocket = connectToServer(host, Config.TCP_PORT);
-                        FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", host, sdfsFileName, 0), getSocket);
-                        if (getResult.isHasError()) {
-                            logger.info("get error with <{}>", host);
-                        } else {
-                            //Todo:receive the file and save
-
-
-                            logger.info("File <{}> get finished!!!", sdfsFileName);
-                        }
-                    } catch (IOException e) {
-                        logger.debug("Failed to establish connection with <{}>", host, e);
-                    }
-
-                }
-            } else {
-                logger.info("Failure on query in put operation");
-            }
+            logger.info("Failure on query in put operation");
         }
     }
 
@@ -246,16 +256,15 @@ public final class FileOperation {
     /**
      * Copy file to a path
      */
-    private void localCopyFileToStorage(String originalPath, String newFileName, Boolean isPut) throws IOException {
+    private void localCopyFileToStorage(File originalPath, String newFileName, Boolean isPut) throws IOException {
         File dest;
         if (isPut) {
             dest = new File(Config.STORAGE_PATH, newFileName);
         } else {
             dest = new File(Config.GET_PATH, newFileName);
         }
-        logger.debug("Copy file from <{}> to <{}>", originalPath, dest.getAbsolutePath());
-        File src = new File(originalPath);
-        try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(src))) {
+        logger.debug("Copy file from <{}> to <{}>", originalPath.getAbsolutePath(), dest.getAbsolutePath());
+        try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(originalPath))) {
             try (BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(dest))) {
                 bufferedReadWrite(is, os, 8192);
             }
@@ -318,60 +327,32 @@ public final class FileOperation {
     }
 
     /**
-     * Just send the file via socket, do nothing with socket
+     * Just send the file via socket, no closing socket
      *
-     * @param originalFilePath File path for the file you want to send
-     * @param socket           A socket connects to remote host
-     * @param sdfsName         SDFS name to send to client
-     * @return Is send operation success
+     * @param toSendFile File path for the file you want to send
+     * @param socket     A socket connects to remote host
+     * @param sdfsName   SDFS name to send to client
+     * @param intention  Send for get or put
      */
-    private boolean sendFileViaSocket(String originalFilePath, Socket socket, String sdfsName, int version) {
-        try {
-            File toSend = new File(originalFilePath);
-            try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSend))) {
-                logger.debug("Sending <{}> to <{}>", originalFilePath, socket.getRemoteSocketAddress());
-                DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
-                dOut.writeUTF(sdfsName);
-                dOut.writeInt(version);
-                dOut.writeLong(toSend.length());
-                bufferedReadWrite(in, dOut, Config.NETWORK_BUFFER_SIZE);
-            }
-        } catch (IOException e) {
-            logger.error("Fail sending file", e);
-            return false;
+    private void sendFileViaSocket(File toSendFile, Socket socket, String sdfsName, int version, String intention) throws IOException {
+        try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSendFile))) {
+            logger.debug("[{}] Sending <{}>({}b) version <{}> to <{}>", intention, toSendFile.getAbsolutePath(), toSendFile.length(), version, socket.getRemoteSocketAddress());
+            DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
+            dOut.writeUTF(intention.toLowerCase());
+            dOut.writeUTF(sdfsName);
+            dOut.writeInt(version);
+            dOut.writeLong(toSendFile.length());
+            bufferedReadWrite(in, dOut, Config.NETWORK_BUFFER_SIZE);
         }
-        logger.info("Success sending file");
-        return true;
     }
 
     /**
-     * Receive a file via socket, do nothing with socket
-     *
-     * @param socket A socket produced by ServerSocket.accept()
+     * Receive a file via InputStream, do nothing with stream
      */
-    private boolean saveFileViaSocket(Socket socket) {
-        String sdfsName;
-        int version;
-        try {
-            DataInputStream dIn = new DataInputStream(socket.getInputStream());
-            sdfsName = dIn.readUTF();
-            version = dIn.readInt();
-            long fileSize = dIn.readLong();
-            System.err.println(sdfsName);
-            System.err.println(fileSize);
-            this.fileObjectCache = new FileObject(sdfsName, version);
-            this.fileNameCahce = sdfsName;
-            File dest = new File(Config.STORAGE_PATH, this.fileObjectCache.getUUID());
-            try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
-                logger.debug("Receiving file <{}>({}b) of version <{}> from <{}>", sdfsName, fileSize, version, socket.getRemoteSocketAddress());
-                bufferedReadWrite(dIn, bos, Config.NETWORK_BUFFER_SIZE);
-            }
-        } catch (IOException e) {
-            logger.error("Fail receiving file", e);
-            return false;
+    private void saveFileViaSocketInput(InputStream in, File dest) throws IOException {
+        try (BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(dest))) {
+            bufferedReadWrite(in, bos, Config.NETWORK_BUFFER_SIZE);
         }
-        logger.info("Finished receiving file <{}> of version <{}>", sdfsName, version);
-        return true;
     }
 
     /**
@@ -412,25 +393,39 @@ public final class FileOperation {
      */
     private Runnable mainFileRecvServer(Socket socket) {
         return () -> {
-            boolean saveStatus = false;
             Thread.currentThread().setName("FS-recv-process");
-            if (this.fileObjectCache == null && this.fileNameCahce == "") {
-                saveStatus = saveFileViaSocket(socket);
-            } else {
-                logger.debug("file cache occupied");
+            String intention = "";
+            try {
+                DataInputStream dIn = new DataInputStream(socket.getInputStream());
+                intention = dIn.readUTF();
+                String sdfsName = dIn.readUTF();
+                int fileVersion = dIn.readInt();
+                long fileSize = dIn.readLong();
+                logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, socket.getRemoteSocketAddress());
+                File dest;
+                switch (intention) {
+                    case "put":
+                        FileObject fo = new FileObject(fileVersion);
+                        dest = new File(Config.STORAGE_PATH, fo.getUUID());
+                        saveFileViaSocketInput(dIn, dest);
+                        // Only update list when save file is successful
+                        this.localFileMap.put(sdfsName, fo);
+                        break;
+                    case "get":
+                        dest = new File(Config.GET_PATH, sdfsName);
+                        saveFileViaSocketInput(dIn, dest);
+                        break;
+                    default:
+                        throw new IOException("Unknown intention");
+                }
+                logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, socket.getRemoteSocketAddress());
+            } catch (IOException e) {
+                logger.error("Receive file failed", e);
             }
             try {
                 socket.close();
             } catch (IOException e) {
                 logger.error("Closing socket failed");
-                return;
-            }
-            if (saveStatus) {
-                this.localFileMap.put(this.fileNameCahce, this.fileObjectCache);
-                this.fileObjectCache = null;
-                this.fileNameCahce = "";
-            } else {
-                logger.debug("file save failed");
             }
         };
     }
@@ -551,29 +546,26 @@ public final class FileOperation {
 
 
     private void getHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
-        String fileName = cmd.getFileName();
+        String sdfsFileName = cmd.getFileName();
         FileCommandResult result = new FileCommandResult(null, 0);
-        FileObject file = this.localFileMap.get(fileName);
-        if (file != null) {
-            result.setReplicaNodes(file.getReplicaLocations());
-            result.setVersion(file.getVersion());
-            sendFileCommandResultViaSocket(out, result);
-            try {
-                String UUID = file.getUUID();
-                Socket fileTransferSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
-                //Todo:what is the file path?
-                if (sendFileViaSocket(Config.STORAGE_PATH + "/" + UUID, fileTransferSocket, fileName, result.getVersion())) {
-                    logger.info("Requested file send back");
-                } else {
-                    logger.debug("Fail to send file");
-                }
-            } catch (IOException e) {
-                logger.debug("Fail to establish connection", e);
-            }
-        } else {
+        FileObject file = this.localFileMap.get(sdfsFileName);
+        if (file == null) {
             result.setHasError(true);
-            logger.info("cannot find file <{}> at <{}>", fileName, this.node.getHostName());
+            logger.info("cannot find file <{}> at <{}>", sdfsFileName, this.node.getHostName());
             sendFileCommandResultViaSocket(out, result);
+            return;
+        }
+        result.setReplicaNodes(file.getReplicaLocations());
+        result.setVersion(file.getVersion());
+        sendFileCommandResultViaSocket(out, result);
+        try {
+            Socket transSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+            File toSend = new File(Config.STORAGE_PATH, file.getUUID());
+            sendFileViaSocket(toSend, transSocket, sdfsFileName, result.getVersion(), "get");
+            transSocket.close();
+            logger.info("Requested file <{}> version <{}> sent back", sdfsFileName, result.getVersion());
+        } catch (IOException e) {
+            logger.debug("Fail to send file", e);
         }
     }
 
@@ -590,9 +582,9 @@ public final class FileOperation {
                 replicaNodes.add(hosts.get(1));
                 replicaNodes.add(hosts.get(2));
                 replicaNodes.add(hosts.get(0));
-                logger.debug("Selected replica nodes: {}", String.join(", ", replicaNodes));
+                logger.warn("Selected replica nodes: {}", String.join(", ", replicaNodes));
                 //set sdfs meta information
-                FileObject newFile = new FileObject(fileName, version);
+                FileObject newFile = new FileObject(version);
                 newFile.setReplicaLocations(replicaNodes);
                 this.sdfsFileMap.put(fileName, newFile);
                 //send back fcs
