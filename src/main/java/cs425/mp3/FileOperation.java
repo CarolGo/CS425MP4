@@ -105,7 +105,7 @@ public final class FileOperation {
                 if (res.isHasError()) {
                     logger.info("master put error");
                 } else {
-                    localCopyFileToStorage(localFileName, sdfsFileName);
+                    localCopyFileToStorage(localFileName, sdfsFileName, true);
                     logger.info("local replication finished");
                     for (String host : res.getReplicaNodes()) {
                         Socket replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
@@ -117,7 +117,7 @@ public final class FileOperation {
                         logger.info("put replica of {} at {}", sdfsFileName, host);
                         replicaSocket.close();
                     }
-                    logger.info("put finished");
+                    logger.info("put finished!!!");
                 }
             } catch (IOException e) {
                 logger.debug("Failed to establish connection", e);
@@ -130,7 +130,46 @@ public final class FileOperation {
     }
 
     public void get(String sdfsFileName, String localFileName) {
+        //try the local file first
+        if(this.localFileMap.get(sdfsFileName) != null){
+            logger.info("File found in local machine");
+            try{
+                //todo: what is the file path?
+                localCopyFileToStorage(Config.STORAGE_PATH + "/" + this.localFileMap.get(sdfsFileName).getUUID(), localFileName, false);
+                logger.info("Local file <{}> get finished!!!", sdfsFileName);
+            }catch (IOException e){
+                logger.debug("fail to local get");
+            }
+        }
+        else{
+            String leader = this.node.getLeader();
+            if (leader.isEmpty()) {
+                logger.error("Leader empty, can not get");
+                return;
+            }
+            FileCommandResult queryResault = query(sdfsFileName);
+            if (queryResault != null && queryResault.getVersion() >= 0) {
+                for (String host : queryResault.getReplicaNodes()) {
+                    try {
+                        Socket getSocket = connectToServer(host, Config.TCP_PORT);
+                        FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", host, sdfsFileName, 0), getSocket);
+                        if (getResult.isHasError()) {
+                            logger.info("get error with <{}>", host);
+                        } else {
+                            //Todo:receive the file and save
 
+
+                            logger.info("File <{}> get finished!!!", sdfsFileName);
+                        }
+                    } catch (IOException e) {
+                        logger.debug("Failed to establish connection with <{}>", host, e);
+                    }
+
+                }
+            } else {
+                logger.info("Failure on query in put operation");
+            }
+        }
     }
 
     public void delete(String sdfsFileName) {
@@ -145,7 +184,7 @@ public final class FileOperation {
         for (String file : this.localFileMap.keySet()) {
             FileObject fo = this.localFileMap.get(file);
             int version = fo.getVersion();
-            logger.info("local file includes: {}+{}", version, fo.getPath());
+            logger.info("local file includes: {}+{}", file, version);
         }
     }
 
@@ -161,9 +200,15 @@ public final class FileOperation {
 
     /**
      * Copy file to a path
+     *
      */
-    private void localCopyFileToStorage(String originalPath, String newFileName) throws IOException {
-        File dest = new File(Config.STORAGE_PATH, newFileName);
+    private void localCopyFileToStorage(String originalPath, String newFileName, Boolean isPut) throws IOException {
+        File dest;
+        if (isPut){
+            dest = new File(Config.STORAGE_PATH, newFileName);
+        }else{
+            dest = new File(Config.GET_PATH, newFileName);
+        }
         logger.debug("Copy file from <{}> to <{}>", originalPath, dest.getAbsolutePath());
         File src = new File(originalPath);
         try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(src))) {
@@ -371,6 +416,9 @@ public final class FileOperation {
                     case "put":
                         putHandler(out, cmd, clientSocket.getInetAddress().getHostName());
                         break;
+                    case "get":
+                        getHandler(out, cmd, clientSocket.getInetAddress().getHostName());
+                        break;
                     default:
                         logger.error("Command type error");
                         break;
@@ -388,6 +436,34 @@ public final class FileOperation {
                 logger.error("Close socket failed", e);
             }
         };
+    }
+
+
+    private void getHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
+        String fileName = cmd.getFileName();
+        FileCommandResult result = new FileCommandResult(null, 0);
+        FileObject file = this.localFileMap.get(fileName);
+        if (file != null){
+            result.setReplicaNodes(file.getReplicaLocations());
+            result.setVersion(file.getVersion());
+            sendFileCommandResultViaSocket(out, result);
+            try{
+                String UUID = file.getUUID();
+                Socket fileTransferSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+                //Todo:what is the file path?
+                if (sendFileViaSocket(Config.STORAGE_PATH +"/" + UUID, fileTransferSocket, fileName, result.getVersion())){
+                    logger.info("Requested file send back");
+                }else{
+                    logger.debug("Fail to send file");
+                }
+            }catch(IOException e){
+                logger.debug("Fail to establish connection", e);
+            }
+        }else{
+            result.setHasError(true);
+            logger.info("cannot find file <{}> at <{}>", fileName, this.node.getHostName());
+            sendFileCommandResultViaSocket(out, result);
+        }
     }
 
     private void putHandler(ObjectOutputStream out, FileCommand cmd, String clientHostname) {

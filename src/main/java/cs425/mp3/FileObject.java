@@ -18,10 +18,6 @@ public class FileObject {
      * replica locations of the file
      */
     private Set<String> replicaLocations;
-    /**
-     * local path for the file. empty when remote
-     */
-    private String path;
 
     /**
      * Initialize File object
@@ -59,11 +55,4 @@ public class FileObject {
         this.replicaLocations = replicaLocations;
     }
 
-    public String getPath() {
-        return path;
-    }
-
-    public void setPath(String path) {
-        this.path = path;
-    }
 }

@@ -436,4 +436,8 @@ public class Node {
     public String[] getNodesArray() {
         return this.memberList.keySet().toArray(new String[0]);
     }
+
+    public String getHostName() {
+        return hostName;
+    }
 }
