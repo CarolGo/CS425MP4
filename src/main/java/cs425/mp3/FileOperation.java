@@ -3,6 +3,7 @@ package cs425.mp3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jnlp.FileContents;
 import java.util.Set;
 import java.io.*;
 import java.net.InetAddress;
@@ -12,6 +13,8 @@ import java.net.Socket;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.net.SocketAddress;
+import java.util.UUID;
 
 /**
  * All operations regarding distributed FS
@@ -21,8 +24,7 @@ public final class FileOperation {
 
     // Runtime variable
     private final Node node;
-    private final ExecutorService processThread;
-    private final ExecutorService singleMainThread;
+    private final ExecutorService exec;
     private final String serverHostname;
     private final ServerSocket serverSocket;
     private boolean isFileServerRunning;
@@ -35,37 +37,50 @@ public final class FileOperation {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
         this.serverSocket = new ServerSocket(Config.TCP_PORT);
-        this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
-        this.singleMainThread = Executors.newSingleThreadExecutor();
+        int nThreads = Config.NUM_CORES * 2;
+        this.exec = Executors.newFixedThreadPool(nThreads);
         this.isFileServerRunning = true;
-        this.singleMainThread.submit(() -> {
-            Thread.currentThread().setName("FS-main");
-            logger.info("File server started listening on <{}>...", this.serverHostname);
-            while (this.isFileServerRunning) {
-                try {
-                    if (this.serverSocket.isClosed()) continue;
-                    this.processThread.submit(this.mainFileServer(this.serverSocket.accept()));
-                } catch (IOException e) {
-                    logger.error("Server socket failed", e);
-                }
-            }
-        });
+        for (int i = 0; i < nThreads; i++) {
+            this.exec.submit(this.mainFileServer());
+        }
     }
 
     public void stopServer() {
         this.isFileServerRunning = false;
-        this.processThread.shutdown();
-        this.singleMainThread.shutdown();
-        try {
-            this.serverSocket.close();
-            logger.info("File server stopped listening...");
-        } catch (IOException e) {
-            logger.error("Server socket failed to close", e);
-        }
     }
 
     public void put(String localFileName, String sdfsFileName) {
+        String leader = this.node.getLeader();
+        if(!leader.isEmpty()){
+            FileCommandResult queryResault = query(sdfsFileName);
+            if(queryResault != null && queryResault.getVersion() >= 0){
+                int newVersion = queryResault.getVersion() + 1;
+                FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
+                try {
+                    Socket s = connectToServer(leader);
+                    FileCommandResult res = sendFileCommandViaSocket(cmd, s);
+                    if (!res.isHasError()) {
+                        logger.info("master put error");
+                    }
+                    else{
+                        localCopyFileToStorage(localFileName, Config.STORAGE_PATH+sdfsFileName);
+                        logger.info("local replication finished");
+                        for(String host: res.getReplicaNodes()){
+                            Socket replicaSocket = connectToServer(host);
+                            sendFileViaSocket(localFileName, replicaSocket);
+                            logger.info("put replica of {} at {}", sdfsFileName, host);
+                        }
+                        logger.info("put finished");
+                    }
+                } catch (IOException e) {
+                    logger.debug("Failed to establish connection");
 
+                }
+            }
+            else{
+                logger.info("Failure on query in put operation");
+            }
+        }
     }
 
     public void get(String sdfsFileName, String localFileName) {
@@ -81,11 +96,7 @@ public final class FileOperation {
     }
 
     public void listFileLocal() {
-        for (String file : this.localFileMap.keySet()) {
-            FileObject fo = this.localFileMap.get(file);
-            int version = fo.getVersion();
-            logger.info("local file includes: {}+{}", version, fo.getPath());
-        }
+
     }
 
     public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
@@ -114,7 +125,7 @@ public final class FileOperation {
     /**
      * connection to host
      *
-     * @param host
+     * @param host    server host name to connect to
      * @return socket
      */
 
@@ -205,7 +216,7 @@ public final class FileOperation {
 
     /**
      * @param sdfsFileName SDFS file name
-     * @return verision number 0 if not exist, -1 if failure, otherwise latest version number in master node
+     * @return FileCommandResult
      */
 
     private FileCommandResult query(String sdfsFileName) {
@@ -240,44 +251,39 @@ public final class FileOperation {
     /**
      * Define operations for the file server
      */
-    private Runnable mainFileServer(Socket clientSocket) {
+    private Runnable mainFileServer() {
         return () -> {
-            Thread.currentThread().setName("FS-process");
-            logger.info("Connection from client <{}>", clientSocket.getRemoteSocketAddress());
-            // Logic start
-            FileCommand cmd = null;
-            try {
-                // Output goes first or the input will block forever
-                ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                // Some blocking here for sure
-                cmd = FileCommand.parseFromStream(in);
-                // Communication finished, notice the sequence
-                in.close();
-                if (cmd == null) {
-                    logger.error("FileCommand is null");
-                    return;
+            Thread.currentThread().setName("FS-loop");
+            logger.info("File server running: <{}>", this.serverHostname);
+            while (this.isFileServerRunning) {
+                Socket clientSocket;
+                try {
+                    clientSocket = this.serverSocket.accept();
+                    logger.info("Connection from client {}.", clientSocket.getRemoteSocketAddress());
+                } catch (IOException e) {
+                    logger.error("Server socket failed", e);
+                    continue;
                 }
-                logger.info("file command received from {}.", clientSocket.getInetAddress().getHostName());
-                switch (cmd.getType()) {
-                    case "query":
-                        queryHandler(clientSocket, cmd.getFileName());
-                        break;
-                    default:
-                        logger.error("Command type error");
-                        break;
+                FileCommand cmd = null;
+                try {
+                    // Output goes first or the input will block forever
+                    ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
+                    // Some blocking here for sure
+                    cmd = FileCommand.parseFromStream(in);
+                    logger.info("file command received from {}.", clientSocket.getInetAddress().getHostName());
+                    // Communication finished, notice the sequence
+                    in.close();
+                    switch (cmd.getType()) {
+                        case "query":
+                            queryHandler(clientSocket, cmd.getFileName());
+                    }
+                } catch (ClassNotFoundException e) {
+                    logger.error("Client received malformed data!");
+                } catch (IOException e) {
+
                 }
-            } catch (ClassNotFoundException e) {
-                logger.error("Client received malformed data!");
-            } catch (IOException e) {
-                logger.error("Server socket failed", e);
             }
-            // Logic ends
-            try {
-                clientSocket.close();
-                logger.info("Closed connection from client: <{}>", clientSocket.getRemoteSocketAddress());
-            } catch (IOException e) {
-                logger.error("Close socket failed", e);
-            }
+            logger.info("File server stopped: <{}>", this.serverHostname);
         };
     }
 
