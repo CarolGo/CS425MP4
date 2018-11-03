@@ -80,7 +80,7 @@ public final class FileOperation {
                 if (!res.isHasError()) {
                     logger.info("master put error");
                 } else {
-                    localCopyFileToStorage(localFileName, Config.STORAGE_PATH + sdfsFileName);
+                    localCopyFileToStorage(localFileName, sdfsFileName);
                     logger.info("local replication finished");
                     for (String host : res.getReplicaNodes()) {
                         Socket replicaSocket = connectToServer(host);
@@ -90,7 +90,7 @@ public final class FileOperation {
                     logger.info("put finished");
                 }
             } catch (IOException e) {
-                logger.debug("Failed to establish connection");
+                logger.debug("Failed to establish connection", e);
 
             }
         } else {
@@ -200,7 +200,7 @@ public final class FileOperation {
             out.close();
             socket.close();
         } catch (IOException e) {
-            logger.debug("Failed to establish connection");
+            logger.debug("Failed to establish connection", e);
         }
 
     }
@@ -250,7 +250,7 @@ public final class FileOperation {
                     return res;
                 }
             } catch (IOException e) {
-                logger.debug("Failed to establish connection");
+                logger.debug("Failed to establish connection", e);
                 return null;
             }
         }
