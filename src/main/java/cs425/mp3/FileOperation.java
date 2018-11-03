@@ -224,12 +224,14 @@ public final class FileOperation {
     }
 
     public void listFileLocations(String sdfsFileName) {
-        askBackup();
-        logger.info("All file in SDFS:");
-        for (String file : this.sdfsFileMap.keySet()) {
-            int version = this.sdfsFileMap.get(file).getVersion();
-            logger.info("name:<{}>      version:<{}>        replica hosts:<{}>",
-                    file, version, String.join(", ", this.sdfsFileMap.get(file).getReplicaLocations()));
+        if(!this.node.getLeader().equals(this.node.getHostName())){
+            askBackup();
+        }
+        FileObject file = this.sdfsFileMap.get(sdfsFileName);
+        if(file == null){
+            logger.info("<{}> not stored", sdfsFileName);
+        }else{
+            logger.info(String.join(",", file.getReplicaLocations()));
         }
     }
 
