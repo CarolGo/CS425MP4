@@ -138,6 +138,7 @@ public final class FileOperation {
      */
     private void localCopyFileToStorage(String originalPath, String newFileName) throws IOException {
         File dest = new File(Config.STORAGE_PATH, newFileName);
+        logger.debug("Copy file from <{}> to <{}>", originalPath, dest.getAbsolutePath());
         File src = new File(originalPath);
         try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(src))) {
             try (BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(dest))) {
@@ -292,7 +293,8 @@ public final class FileOperation {
                     logger.error("FileCommand is null");
                     return;
                 }
-                logger.info("file command received from {}.", clientSocket.getInetAddress().getHostName());
+                logger.info("file command received from <{}>, type <{}>",
+                        clientSocket.getInetAddress().getHostName(), cmd.getType());
                 switch (cmd.getType()) {
                     case "query":
                         queryHandler(clientSocket, cmd.getFileName());
@@ -319,41 +321,41 @@ public final class FileOperation {
         };
     }
 
-    private void putHandler(Socket socket, FileCommand cmd){
+    private void putHandler(Socket socket, FileCommand cmd) {
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
         //store new file
-        if(version == 1){
+        if (version == 1) {
             ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
             Collections.shuffle(hosts);
             hosts.remove(socket.getInetAddress().getHostName());
-            if(hosts.size() >= 3){
+            if (hosts.size() >= 3) {
                 Set<String> replicaNodes = new HashSet<>();
                 replicaNodes.add(hosts.get(1));
                 replicaNodes.add(hosts.get(2));
                 replicaNodes.add(hosts.get(0));
+                logger.debug("Selected replica nodes: {}", String.join(", ", replicaNodes));
                 //set sdfs meta information
-                FileObject newFile = new FileObject(fileName,version);
+                FileObject newFile = new FileObject(fileName, version);
                 newFile.setReplicaLocations(replicaNodes);
                 this.sdfsFileMap.put(fileName, newFile);
                 //send back fcs
-                FileCommandResult fcs = new FileCommandResult(replicaNodes,version);
-                sendFileCommandResultViaSocket(socket,fcs);
-            }
-            else{
+                FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
+                sendFileCommandResultViaSocket(socket, fcs);
+            } else {
                 logger.info("put handler fail to get node list");
-                FileCommandResult fcs = new FileCommandResult(null,0);
+                FileCommandResult fcs = new FileCommandResult(null, 0);
                 fcs.setHasError(false);
-                sendFileCommandResultViaSocket(socket,fcs);
+                sendFileCommandResultViaSocket(socket, fcs);
             }
         }
         //update new version
-        else{
+        else {
             FileObject oldFile = this.sdfsFileMap.get(fileName);
             oldFile.setVersion(version);
             Set<String> replicaNodes = oldFile.getReplicaLocations();
-            FileCommandResult fcs = new FileCommandResult(replicaNodes,version);
-            sendFileCommandResultViaSocket(socket,fcs);
+            FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
+            sendFileCommandResultViaSocket(socket, fcs);
         }
     }
 

@@ -433,8 +433,7 @@ public class Node {
         return leader;
     }
 
-    public String[] getNodesArray(){
-        String[] arr = this.memberList.keySet().toArray(new String[this.memberList.size()]);
-        return arr;
+    public String[] getNodesArray() {
+        return this.memberList.keySet().toArray(new String[0]);
     }
 }
