@@ -322,7 +322,6 @@ public final class FileOperation {
                 ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
                 ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
                 cmd = FileCommand.parseFromStream(in);
-                in.close();
                 if (cmd == null) {
                     logger.error("FileCommand is null");
                     return;
