@@ -216,14 +216,12 @@ public final class FileOperation {
 
     }
 
-    private void sendFileCommandResultViaSocket(Socket socket, FileCommandResult fcs) {
+    private void sendFileCommandResultViaSocket(ObjectOutputStream out, FileCommandResult fcs) {
         try {
-            ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(socket.getOutputStream()));
             out.writeObject(fcs);
             out.flush();
             logger.info("file command result sent at '{}'.", fcs.getTimestamp());
             out.close();
-            socket.close();
         } catch (IOException e) {
             logger.debug("Failed to establish connection", e);
         }
@@ -321,23 +319,21 @@ public final class FileOperation {
             FileCommand cmd = null;
             try {
                 // Output goes first or the input will block forever
+                ObjectOutputStream out = new ObjectOutputStream(clientSocket.getOutputStream());
                 ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(clientSocket.getInputStream()));
-                // Some blocking here for sure
                 cmd = FileCommand.parseFromStream(in);
-                // Communication finished, notice the sequence
                 in.close();
                 if (cmd == null) {
                     logger.error("FileCommand is null");
                     return;
                 }
-                logger.info("file command received from <{}>, type <{}>",
-                        clientSocket.getInetAddress().getHostName(), cmd.getType());
+                logger.info("file command received from <{}>, type <{}>", clientSocket.getInetAddress().getHostName(), cmd.getType());
                 switch (cmd.getType()) {
                     case "query":
-                        queryHandler(clientSocket, cmd.getFileName());
+                        queryHandler(out, cmd.getFileName());
                         break;
                     case "put":
-                        putHandler(clientSocket, cmd);
+                        putHandler(out, cmd, clientSocket.getInetAddress().getHostName());
                         break;
                     default:
                         logger.error("Command type error");
@@ -358,14 +354,14 @@ public final class FileOperation {
         };
     }
 
-    private void putHandler(Socket socket, FileCommand cmd) {
+    private void putHandler(ObjectOutputStream out, FileCommand cmd, String clientHostname) {
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
         //store new file
         if (version == 1) {
             ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
             Collections.shuffle(hosts);
-            hosts.remove(socket.getInetAddress().getHostName());
+            hosts.remove(clientHostname);
             if (hosts.size() >= 3) {
                 Set<String> replicaNodes = new HashSet<>();
                 replicaNodes.add(hosts.get(1));
@@ -378,12 +374,12 @@ public final class FileOperation {
                 this.sdfsFileMap.put(fileName, newFile);
                 //send back fcs
                 FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
-                sendFileCommandResultViaSocket(socket, fcs);
+                sendFileCommandResultViaSocket(out, fcs);
             } else {
                 logger.info("put handler fail to get node list");
                 FileCommandResult fcs = new FileCommandResult(null, 0);
                 fcs.setHasError(false);
-                sendFileCommandResultViaSocket(socket, fcs);
+                sendFileCommandResultViaSocket(out, fcs);
             }
         }
         //update new version
@@ -392,11 +388,11 @@ public final class FileOperation {
             oldFile.setVersion(version);
             Set<String> replicaNodes = oldFile.getReplicaLocations();
             FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
-            sendFileCommandResultViaSocket(socket, fcs);
+            sendFileCommandResultViaSocket(out, fcs);
         }
     }
 
-    private void queryHandler(Socket socket, String fileName) {
+    private void queryHandler(ObjectOutputStream out, String fileName) {
         int version = 0;
         Set<String> replicaLocations = null;
         for (String file : this.sdfsFileMap.keySet()) {
@@ -406,7 +402,7 @@ public final class FileOperation {
             }
         }
         FileCommandResult fcs = new FileCommandResult(replicaLocations, version);
-        sendFileCommandResultViaSocket(socket, fcs);
+        sendFileCommandResultViaSocket(out, fcs);
     }
 
 }
