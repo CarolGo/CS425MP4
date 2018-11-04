@@ -72,29 +72,28 @@ public final class FileOperation {
             }
         });
         this.metaBackupThread.scheduleAtFixedRate(() -> {
-                    //Logic here for backup sdfsFileMap
+            //Logic here for backup sdfsFileMap
             String leader = this.node.getLeader();
-            while (leader.equals(this.node.getHostName())) {
-                ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
-                Collections.shuffle(hosts);
-                hosts.remove(this.node.getHostName());
-                for (int i = 0; i < 3; i++) {
-                    try {
-                        Socket backupSocket = connectToServer(hosts.get(i), Config.TCP_PORT);
-                        FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i), "", 0);
-                        backupFileCommand.setBackup(this.sdfsFileMap);
-                        FileCommandResult res = sendFileCommandViaSocket(backupFileCommand, backupSocket);
-                        if (res.isHasError()) {
-                            logger.debug("Fail to ask node <{}> to request backup", hosts.get(i));
-                        }
-                    } catch (IOException e) {
-                        logger.debug("Fail to establish connection with <{}>", hosts);
-                    }
-                }
+            if (!leader.equals(this.node.getHostName())) return;
 
+            ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
+            Collections.shuffle(hosts);
+            hosts.remove(this.node.getHostName());
+            for (int i = 0; i < 3; i++) {
+                try {
+                    Socket backupSocket = connectToServer(hosts.get(i), Config.TCP_PORT);
+                    FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i), "", 0);
+                    backupFileCommand.setBackup(this.sdfsFileMap);
+                    FileCommandResult res = sendFileCommandViaSocket(backupFileCommand, backupSocket);
+                    if (res.isHasError()) {
+                        logger.debug("Fail to ask node <{}> to request backup", hosts.get(i));
+                    }
+                } catch (IOException e) {
+                    logger.debug("Fail to establish connection with <{}>", hosts);
+                }
             }
-                }, 10, Config.BACKUP_PERIOD, TimeUnit.SECONDS
-        );
+
+        }, 10, Config.BACKUP_PERIOD, TimeUnit.SECONDS);
         this.singleMainThread.submit(() -> {
             Thread.currentThread().setName("FS-main");
             logger.info("File server started listening on <{}>...", this.serverHostname);
