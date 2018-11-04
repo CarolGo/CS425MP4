@@ -264,7 +264,7 @@ public final class FileOperation {
                 try {
                     replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
-                    sendFileViaSocket(toSend, replicaSocket, sdfsFileName, newVersion, "put");
+                    sendFileViaSocket(toSend, replicaSocket, sdfsFileName, newVersion, "put", "");
                 } catch (IOException e) {
                     logger.info("Failed put replica of {} at {}", sdfsFileName, host);
                     logger.error("Reason for failure: ", e);
@@ -294,7 +294,7 @@ public final class FileOperation {
             for (String host : queryResault.getReplicaNodes()) {
                 try {
                     Socket getSocket = connectToServer(host, Config.TCP_PORT);
-                    FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", host, sdfsFileName, 0), getSocket);
+                    FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", localFileName, sdfsFileName, 0), getSocket);
                     if (getResult.isHasError()) {
                         logger.info("get error with <{}>", host);
                     } else {
@@ -391,6 +391,9 @@ public final class FileOperation {
         }
     }
 
+    /**
+     * Ask leader for a backup of sdfsFileMap
+     */
     private void askBackup() {
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
@@ -423,13 +426,70 @@ public final class FileOperation {
     }
 
     public void getVersions(String sdfsFileName, String numVersions, String localFileName) {
-        int numOfLatestVersions;
-        try {
-            numOfLatestVersions = Integer.valueOf(numVersions);
-        } catch (NumberFormatException n) {
-            logger.error("Version number input error");
-            numOfLatestVersions = 1;
+        String leader = this.node.getLeader();
+        if (leader.isEmpty()) {
+            logger.error("Leader empty, can get versions in SDFS");
+            return;
         }
+        if (!this.node.getLeader().equals(this.node.getHostName())) {
+            // Ask leader for all file locations, trick
+            askBackup();
+        }
+        if (this.sdfsFileMap.size() == 0) {
+            logger.error("No file ever stored in cluster");
+            return;
+        }
+        HashMap<Integer, Set<String>> versionLocations = this.transformNumOfVersion(this.sdfsFileMap.get(sdfsFileName));
+        int latestVersion = latestVersion(versionLocations);
+        int numOfLatestVersions = Integer.valueOf(numVersions);
+        for (int targetVer = latestVersion; targetVer > latestVersion - numOfLatestVersions; targetVer--) {
+            Set<String> potentialNodes = versionLocations.get(targetVer);
+            for (String node : potentialNodes) {
+                logger.info("Getting version <{}> for <{}> from <{}>", targetVer, sdfsFileName, node);
+                try {
+                    Socket s = connectToServer(node, Config.TCP_FILE_TRANS_PORT);
+                    // Send version i of x file to me
+                    FileCommand f = new FileCommand("requestVersion", localFileName, sdfsFileName, targetVer);
+                    FileCommandResult fcr = sendFileCommandViaSocket(f, s);
+                    if (fcr.isHasError()) {
+                        logger.error("Remote <{}> does not have version <{}> for <{}>", node, targetVer, sdfsFileName);
+                    } else {
+                        // Got one version, enough
+                        logger.info("Success get version <{}> for <{}> from <{}>", targetVer, sdfsFileName, node);
+                        break;
+                    }
+                } catch (IOException e) {
+                    logger.debug("Fail to ask others for versions", e);
+                }
+            }
+        }
+    }
+
+    private int latestVersion(HashMap<Integer, Set<String>> vL) {
+        // Find max of version # because stream().max() not working
+        int latestVersion = Integer.MIN_VALUE;
+        for (Integer i : vL.keySet()) {
+            if (i > latestVersion) {
+                latestVersion = i;
+            }
+        }
+        return latestVersion;
+    }
+
+    /**
+     * Flatten the fileObjects to a {1:Hosts; 2:Hosts...}
+     */
+    private HashMap<Integer, Set<String>> transformNumOfVersion(List<FileObject> fileObjects) {
+        HashMap<Integer, Set<String>> res = new HashMap<>();
+        for (FileObject fo : fileObjects) {
+            int ver = fo.getVersion();
+            if (!res.containsKey(ver)) {
+                res.put(ver, new HashSet<>());
+            }
+            Set<String> hosts = res.get(ver);
+            hosts.addAll(fo.getReplicaLocations());
+        }
+        return res;
     }
 
     /**
@@ -508,12 +568,13 @@ public final class FileOperation {
     /**
      * Just send the file via socket, no closing socket
      *
-     * @param toSendFile File path for the file you want to send
-     * @param socket     A socket connects to remote host
-     * @param sdfsName   SDFS name to send to client
-     * @param intention  Send for get or put
+     * @param toSendFile        File path for the file you want to send
+     * @param socket            A socket connects to remote host
+     * @param sdfsName          SDFS name to send to client
+     * @param intention         Send for get or put
+     * @param fileNameForNonPut If not putting, then need to specify file name
      */
-    private void sendFileViaSocket(File toSendFile, Socket socket, String sdfsName, int version, String intention) throws IOException {
+    private void sendFileViaSocket(File toSendFile, Socket socket, String sdfsName, int version, String intention, String fileNameForNonPut) throws IOException {
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSendFile))) {
             logger.debug("[{}] Sending <{}>({}b) version <{}> to <{}>", intention, toSendFile.getAbsolutePath(), toSendFile.length(), version, socket.getRemoteSocketAddress());
             DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
@@ -521,6 +582,7 @@ public final class FileOperation {
             dOut.writeUTF(sdfsName);
             dOut.writeInt(version);
             dOut.writeLong(toSendFile.length());
+            dOut.writeUTF(fileNameForNonPut);
             bufferedReadWrite(in, dOut, Config.NETWORK_BUFFER_SIZE);
         }
     }
@@ -581,6 +643,7 @@ public final class FileOperation {
                 String sdfsName = dIn.readUTF();
                 int fileVersion = dIn.readInt();
                 long fileSize = dIn.readLong();
+                String extraInfo = dIn.readUTF();
                 logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
                 File dest;
                 switch (intention) {
@@ -595,9 +658,13 @@ public final class FileOperation {
                         this.localFileMap.get(sdfsName).add(fo);
                         break;
                     case "get":
-                        dest = new File(Config.GET_PATH, sdfsName);
+                        dest = new File(Config.GET_PATH, extraInfo);
                         saveFileViaSocketInput(dIn, dest);
                         this.hasReceivedSuccess.set(true);
+                        break;
+                    case "version":
+                        dest = new File(Config.GET_PATH, String.format("%s-version-%d", extraInfo, fileVersion));
+                        saveFileViaSocketInput(dIn, dest);
                         break;
                     default:
                         throw new IOException("Unknown intention");
@@ -653,6 +720,9 @@ public final class FileOperation {
                     case "backup":
                         backupHandler(out, clientSocket.getInetAddress().getHostName());
                         break;
+                    case "requestVersion":
+                        requestVersionHandler(out, cmd, clientSocket.getInetAddress().getHostName());
+                        break;
                     case "requestBackup":
                         requestBackupHandler(out, cmd);
                         break;
@@ -686,6 +756,32 @@ public final class FileOperation {
         };
     }
 
+    private void requestVersionHandler(ObjectOutputStream out, FileCommand cmd, String targetHostname) {
+        int targetV = cmd.getVersionNum();
+        String saveToName = cmd.getHostName();
+        String whichFile = cmd.getFileName();
+        Optional<FileObject> oFo = this.localFileMap.get(whichFile).stream().filter(fo -> fo.getVersion() == targetV).findFirst();
+        FileCommandResult fcr = new FileCommandResult(null, -1);
+        if (!oFo.isPresent()) {
+            logger.error("No file <{}> with version <{}> here", whichFile, targetV);
+            fcr.setHasError(true);
+            sendFileCommandResultViaSocket(out, fcr);
+            return;
+        }
+        sendFileCommandResultViaSocket(out, fcr);
+        // Send this file back
+        FileObject file = oFo.get();
+        try {
+            Socket transSocket = connectToServer(targetHostname, Config.TCP_FILE_TRANS_PORT);
+            File toSend = new File(Config.STORAGE_PATH, file.getUUID());
+            sendFileViaSocket(toSend, transSocket, whichFile, targetV, "version", saveToName);
+            transSocket.close();
+            logger.info("Requested file <{}> version <{}> sent back", whichFile, targetV);
+        } catch (IOException e) {
+            logger.debug("Fail to send file", e);
+        }
+    }
+
     private void requestBackupHandler(ObjectOutputStream out, FileCommand cmd) {
         this.sdfsFileMap = cmd.getBackup();
         this.lastBackupTime = cmd.getTimestamp();
@@ -717,7 +813,7 @@ public final class FileOperation {
                     logger.info("R1");
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
                     logger.info("R2");
-                    sendFileViaSocket(toSend, socket, fileName, version, "put");
+                    sendFileViaSocket(toSend, socket, fileName, version, "put", "");
                     logger.info("R3");
                     socket.close();
                     logger.info("R4");
@@ -813,6 +909,7 @@ public final class FileOperation {
 
     private void getHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
         String sdfsFileName = cmd.getFileName();
+        String saveToName = cmd.getHostName();
         FileCommandResult result = new FileCommandResult(null, 0);
         FileObject file = this.getLatestLocalVersion(sdfsFileName);
         if (file == null) {
@@ -827,7 +924,7 @@ public final class FileOperation {
         try {
             Socket transSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
             File toSend = new File(Config.STORAGE_PATH, file.getUUID());
-            sendFileViaSocket(toSend, transSocket, sdfsFileName, result.getVersion(), "get");
+            sendFileViaSocket(toSend, transSocket, sdfsFileName, result.getVersion(), "get", saveToName);
             transSocket.close();
             logger.info("Requested file <{}> version <{}> sent back", sdfsFileName, result.getVersion());
         } catch (IOException e) {
