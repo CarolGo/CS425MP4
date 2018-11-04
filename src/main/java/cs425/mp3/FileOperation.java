@@ -442,6 +442,10 @@ public final class FileOperation {
         HashMap<Integer, Set<String>> versionLocations = this.transformNumOfVersion(this.sdfsFileMap.get(sdfsFileName));
         int latestVersion = latestVersion(versionLocations);
         int numOfLatestVersions = Integer.valueOf(numVersions);
+        if (latestVersion - numOfLatestVersions < 0) {
+            logger.error("Too many version history requested. Only have <{}>, asked for <{}>", latestVersion, numOfLatestVersions);
+            return;
+        }
         for (int targetVer = latestVersion; targetVer > latestVersion - numOfLatestVersions; targetVer--) {
             Set<String> potentialNodes = versionLocations.get(targetVer);
             for (String node : potentialNodes) {
