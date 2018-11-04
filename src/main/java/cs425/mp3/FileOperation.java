@@ -82,6 +82,7 @@ public final class FileOperation {
                         try {
                             Socket s = connectToServer(this.node.getLeader(), Config.TCP_PORT);
                             FileCommandResult result = sendFileCommandViaSocket(f, s);
+                            logger.info("2");
                             if (result.isHasError()) {
                                 logger.error("Fail send crash msg");
                                 return;
@@ -153,16 +154,27 @@ public final class FileOperation {
                 int sampleSize = 4 - repNodes.size();
                 int i = 0;
                 String targetNode = repNodes.toArray(new String[0])[0];
+                if (targetNode == null) {
+                    logger.error("TargetNode is NULL");
+                } else {
+                    logger.info("TargetNode is {}", targetNode);
+                }
+                logger.info("H0");
                 ArrayList<String> allAliveHost = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
                 Collections.shuffle(allAliveHost);
+                logger.info("H1");
                 for (String host : allAliveHost) {
-                    if (i >= sampleSize) break;
-                    if (!host.equals(targetNode)) continue;
+                    if (i++ >= sampleSize) break;
+                    if (host.equals(targetNode)) continue;
+                    if (repNodes.contains(host)) continue;
+                    logger.info("H2 " + host);
                     if (host.equals(this.node.getLeader())) {
                         FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, fo.getVersion());
                         try {
-                            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
+                            Socket socket = connectToServer(host, Config.TCP_PORT);
+                            logger.info("H3");
                             FileCommandResult result = sendFileCommandViaSocket(fc, socket);
+                            logger.info("H3f");
                             if (result.isHasError()) {
                                 logger.error("Has err");
                             }
@@ -172,8 +184,10 @@ public final class FileOperation {
                     } else {
                         try {
                             Socket socket = connectToServer(host, Config.TCP_PORT);
+                            logger.info("H4");
                             FileCommand f = new FileCommand("getReplica", targetNode, fileName, fo.getVersion());
                             FileCommandResult res = sendFileCommandViaSocket(f, socket);
+                            logger.info("H4f");
                             if (res.isHasError()) {
                                 logger.error("RES fail");
                                 continue;
@@ -483,7 +497,7 @@ public final class FileOperation {
         try {
             out.writeObject(fcs);
             out.flush();
-            // logger.info("file command result sent at '{}'.", fcs.getTimestamp());
+            logger.info("file command result sent at '{}'.", fcs.getTimestamp());
         } catch (IOException e) {
             logger.debug("Failed to establish connection", e);
         }
@@ -736,7 +750,9 @@ public final class FileOperation {
         }
         this.leaderFailureHandledSet.put(failedNodeHostname, "");
         copyAllFilesForFailureNode(failedNodeHostname);
+        logger.info("Ready to send crashHandler");
         sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+
     }
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
