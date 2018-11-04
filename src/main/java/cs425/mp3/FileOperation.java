@@ -201,23 +201,6 @@ public final class FileOperation {
     }
 
     public void get(String sdfsFileName, String localFileName) {
-        //try the local file first
-        if (this.localFileMap.get(sdfsFileName) != null) {
-            logger.info("File <{}> found in local machine", sdfsFileName);
-            try {
-                FileObject latest = getLatestLocalVersion(sdfsFileName);
-                if (latest == null) {
-                    logger.error("Latest FileObject is null");
-                    return;
-                }
-                File localPath = new File(Config.STORAGE_PATH, latest.getUUID());
-                localCopyFileToStorage(localPath, localFileName, false);
-                logger.info("Local file <{}> got!!!", sdfsFileName);
-            } catch (IOException e) {
-                logger.debug("fail for local get");
-            }
-            return;
-        }
         // Not in local, get from Master
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
