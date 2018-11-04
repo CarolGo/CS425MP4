@@ -172,7 +172,7 @@ public class Node {
                     send(keys.get(next1), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next2), this.port, isAlive, "", Instant.now().toString());
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
-                    Util.noExceptionSleep(500);
+                    Util.noExceptionSleep(1000);
                     int i = 0;
                     for (; i < 5; i++) {
                         for (String host : this.ackList.keySet()) {
@@ -181,7 +181,7 @@ public class Node {
                                 // logger.info("{}th ping <{}> at <{}>", Integer.toString(i), host, Instant.now());
                             }
                         }
-                        Util.noExceptionSleep(200);
+                        Util.noExceptionSleep(500);
                     }
                     boolean needUpdate = false;
                     for (String host : this.ackList.keySet()) {

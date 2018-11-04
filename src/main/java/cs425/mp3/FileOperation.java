@@ -377,7 +377,7 @@ public final class FileOperation {
         s.setKeepAlive(true);
         s.connect(new InetSocketAddress(host, port), Config.CONNECT_TIMEOUT_SECOND * 1000);
         s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
-        logger.info("Connected to server {}", host);
+        // logger.info("Connected to server {}", host);
         return s;
     }
 
@@ -396,7 +396,7 @@ public final class FileOperation {
 
             out.writeObject(fc);
             out.flush();
-            logger.info("file command sent at '{}'.", fc.getTimestamp());
+            // logger.info("file command sent at '{}'.", fc.getTimestamp());
 
             // Some blocking here for sure
             res = FileCommandResult.parseFromStream(in);
@@ -416,7 +416,7 @@ public final class FileOperation {
         try {
             out.writeObject(fcs);
             out.flush();
-            logger.info("file command result sent at '{}'.", fcs.getTimestamp());
+            // logger.info("file command result sent at '{}'.", fcs.getTimestamp());
         } catch (IOException e) {
             logger.debug("Failed to establish connection", e);
         }
@@ -586,7 +586,7 @@ public final class FileOperation {
             // Logic ends
             try {
                 clientSocket.close();
-                logger.info("Closed connection from client: <{}>", clientSocket.getRemoteSocketAddress());
+                // logger.info("Closed connection from client: <{}>", clientSocket.getRemoteSocketAddress());
             } catch (IOException e) {
                 logger.error("Close socket failed", e);
             }
