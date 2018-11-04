@@ -40,7 +40,7 @@ public final class FileOperation {
     private ConcurrentHashMap<String, List<FileObject>> sdfsFileMap = new ConcurrentHashMap<>();
 
     // Failure cached queue
-    private ConcurrentLinkedQueue<String> leaderFailureHandleQueue = new ConcurrentLinkedQueue<>();
+    private ConcurrentHashMap<String, String> leaderFailureHandledSet = new ConcurrentHashMap<>();
 
     public FileOperation(Node n) throws IOException {
         this.node = n;
@@ -66,9 +66,32 @@ public final class FileOperation {
                 }
                 if (this.node.getHostName().equals(this.node.getLeader())) {
                     logger.warn("Leader dealt with crash info");
+                    this.node.crashedNode.forEach((failedNodeHostname, timestamp) -> {
+                        if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
+                            // Already handled before
+                            logger.info("Already handled error: <{}>", failedNodeHostname);
+                            return;
+                        }
+                        this.leaderFailureHandledSet.put(failedNodeHostname, "");
+                        copyAllFilesForFailureNode(failedNodeHostname);
+                    });
                 } else {
                     logger.warn("Member dealt with crash info");
+                    this.node.crashedNode.forEach((host, timestamp) -> {
+                        FileCommand f = new FileCommand("crash", this.node.getLeader(), host, -1);
+                        try {
+                            Socket s = connectToServer(this.node.getLeader(), Config.TCP_PORT);
+                            FileCommandResult result = sendFileCommandViaSocket(f, s);
+                            if (result.isHasError()) {
+                                logger.error("Fail send crash msg");
+                                return;
+                            }
+                        } catch (IOException e) {
+                            logger.error("Fail send crash msg to leader", e);
+                        }
+                    });
                 }
+                this.node.crashedNode.clear();
             }
         });
         this.metaBackupThread.scheduleAtFixedRate(() -> {
@@ -115,6 +138,50 @@ public final class FileOperation {
                     this.processFileRecvThread.submit(this.mainFileRecvServer(this.fileReceiveSocket.accept()));
                 } catch (IOException e) {
                     logger.error("File socket failed", e);
+                }
+            }
+        });
+    }
+
+    private void copyAllFilesForFailureNode(String failedNodeHostname) {
+        this.sdfsFileMap.forEach((fileName, fileObjects) -> {
+            for (FileObject fo : fileObjects) {
+                Set<String> repNodes = fo.getReplicaLocations();
+                if (!repNodes.contains(failedNodeHostname)) continue;
+                repNodes.remove(failedNodeHostname);
+                logger.warn("Rep nodes candidate list length: {}", repNodes.size());
+                int sampleSize = 4 - repNodes.size();
+                int i = 0;
+                String targetNode = repNodes.toArray(new String[0])[0];
+                ArrayList<String> allAliveHost = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
+                Collections.shuffle(allAliveHost);
+                for (String host : allAliveHost) {
+                    if (i >= sampleSize) break;
+                    if (!host.equals(targetNode)) continue;
+                    if (host.equals(this.node.getLeader())) {
+                        FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, fo.getVersion());
+                        try {
+                            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
+                            FileCommandResult result = sendFileCommandViaSocket(fc, socket);
+                            if (result.isHasError()) {
+                                logger.error("Has err");
+                            }
+                        } catch (IOException e) {
+                            logger.error("crashHandler err", e);
+                        }
+                    } else {
+                        try {
+                            Socket socket = connectToServer(host, Config.TCP_PORT);
+                            FileCommand f = new FileCommand("getReplica", targetNode, fileName, fo.getVersion());
+                            FileCommandResult res = sendFileCommandViaSocket(f, socket);
+                            if (res.isHasError()) {
+                                logger.error("RES fail");
+                                continue;
+                            }
+                        } catch (IOException e) {
+                            logger.error("Crash handle fail", e);
+                        }
+                    }
                 }
             }
         });
@@ -574,6 +641,17 @@ public final class FileOperation {
                     case "requestBackup":
                         requestBackupHandler(out, cmd);
                         break;
+                    case "crash":
+                        if (this.node.getLeader().equals(this.node.getHostName())) {
+                            crashHandler(out, cmd);
+                        }
+                        break;
+                    case "getReplica":
+                        getReplicaHandle(out, cmd);
+                        break;
+                    case "requestReplica":
+                        requestReplicaHandle(out, cmd, clientSocket.getInetAddress().getHostName());
+                        break;
                     default:
                         logger.error("Command type error");
                         break;
@@ -609,6 +687,56 @@ public final class FileOperation {
         } else {
             logger.debug("Wrong backup request received by <{}>", this.node.getHostName());
         }
+    }
+
+    private void requestReplicaHandle(ObjectOutputStream out, FileCommand cmd, String requestHost) {
+        int version = cmd.getVersionNum();
+        String fileName = cmd.getFileName();
+        List<FileObject> fileObjects = this.localFileMap.get(fileName);
+        for (FileObject fo : fileObjects) {
+            if (fo.getVersion() == version) {
+                try {
+                    // Send the requested file back to requester
+                    Socket socket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+                    File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
+                    sendFileViaSocket(toSend, socket, fileName, version, "put");
+                    socket.close();
+                    sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+                    break;
+                } catch (IOException e) {
+                    logger.error("requestReplicaHandle err", e);
+                }
+            }
+        }
+    }
+
+    private void getReplicaHandle(ObjectOutputStream out, FileCommand cmd) {
+        String targetNode = cmd.getHostName();
+        String fileName = cmd.getFileName();
+        int version = cmd.getVersionNum();
+        FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, version);
+        try {
+            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
+            FileCommandResult result = sendFileCommandViaSocket(fc, socket);
+            if (result.isHasError()) {
+                logger.error("Has err");
+            }
+            sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+        } catch (IOException e) {
+            logger.error("Get rep handle err", e);
+        }
+    }
+
+    private void crashHandler(ObjectOutputStream out, FileCommand cmd) {
+        String failedNodeHostname = cmd.getFileName();
+        if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
+            // Already handled before
+            logger.info("Already handled error: <{}>", failedNodeHostname);
+            return;
+        }
+        this.leaderFailureHandledSet.put(failedNodeHostname, "");
+        copyAllFilesForFailureNode(failedNodeHostname);
+        sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
     }
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
