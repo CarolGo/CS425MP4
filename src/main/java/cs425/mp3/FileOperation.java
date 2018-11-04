@@ -447,7 +447,7 @@ public final class FileOperation {
             for (String node : potentialNodes) {
                 logger.info("Getting version <{}> for <{}> from <{}>", targetVer, sdfsFileName, node);
                 try {
-                    Socket s = connectToServer(node, Config.TCP_FILE_TRANS_PORT);
+                    Socket s = connectToServer(node, Config.TCP_PORT);
                     // Send version i of x file to me
                     FileCommand f = new FileCommand("requestVersion", localFileName, sdfsFileName, targetVer);
                     FileCommandResult fcr = sendFileCommandViaSocket(f, s);
@@ -722,7 +722,9 @@ public final class FileOperation {
                         break;
                     case "requestVersion":
                         requestVersionHandler(out, cmd, clientSocket.getInetAddress().getHostName());
-                        break;
+                        clientSocket.close();
+                        logger.info("Z1");
+                        return;
                     case "requestBackup":
                         requestBackupHandler(out, cmd);
                         break;
@@ -768,6 +770,7 @@ public final class FileOperation {
             sendFileCommandResultViaSocket(out, fcr);
             return;
         }
+        logger.info("Got matching file, sending to {}", targetHostname);
         sendFileCommandResultViaSocket(out, fcr);
         // Send this file back
         FileObject file = oFo.get();
