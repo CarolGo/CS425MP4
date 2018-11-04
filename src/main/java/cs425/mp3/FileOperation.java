@@ -190,7 +190,6 @@ public final class FileOperation {
                     } else {
                         long totalSleepingTime = 0;
                         long timeout = 100;
-                        //Todo:receive the file and save
                         while (!this.hasReceivedSuccess.get() && totalSleepingTime < Config.FILE_RECV_TIMEOUT_MILLSECOND) {
                             try {
                                 Thread.sleep(timeout);
@@ -272,12 +271,13 @@ public final class FileOperation {
         if (!this.node.getLeader().equals(this.node.getHostName())) {
             askBackup();
         }
-        for (FileObject file : this.sdfsFileMap.get(sdfsFileName)) {
-            if (file == null) {
-                logger.info("<{}> not stored", sdfsFileName);
-            } else {
-                logger.info("File version <{}> replica at: {}", file.getVersion(), String.join(", ", file.getReplicaLocations()));
-            }
+        List<FileObject> fileObjects = this.sdfsFileMap.get(sdfsFileName);
+        if (fileObjects == null) {
+            logger.info("<{}> not stored", sdfsFileName);
+            return;
+        }
+        for (FileObject file : fileObjects) {
+            logger.info("File version <{}> replica at: {}", file.getVersion(), String.join(", ", file.getReplicaLocations()));
         }
     }
 
@@ -649,10 +649,16 @@ public final class FileOperation {
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
         if (version == 0) {
-            // Add a list if version is 0
+            //Not possible, but who knows
+            logger.error("Version is 0, WTF");
+        }
+        if (version == 1) {
+            // Add a list if version is 1
             this.sdfsFileMap.put(fileName, new ArrayList<>(10));
+            logger.debug("Version is 1, add new");
         }
         List<FileObject> thisFileList = this.sdfsFileMap.get(fileName);
+        if (thisFileList == null) logger.error("null");
         //store new file or old file with new version
         ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
         Collections.shuffle(hosts);
