@@ -41,6 +41,9 @@ public class Node {
     private Thread FD;
     private DatagramSocket ds;
     private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
+    public ConcurrentHashMap<String, String> crashedNode = new ConcurrentHashMap<>();
+    public AtomicBoolean isLeaderCrashed = new AtomicBoolean(false);
+    public AtomicBoolean isNewLeaderElected = new AtomicBoolean(false);
 
 
     public Node() throws UnknownHostException {
@@ -185,7 +188,12 @@ public class Node {
                             logger.info("failure of <{}> detected at <{}>", host, Instant.now());
                             if (host.equals(this.leader)) {
                                 logger.info("start leader election protocol");
+                                this.isLeaderCrashed.set(true);
                                 election();
+                            }
+                            //add crashed node, avoid duplicated add
+                            if(!this.crashedNode.contains(host)){
+                                this.crashedNode.put(host,"");
                             }
                             needUpdate = true;
                         }
@@ -363,6 +371,9 @@ public class Node {
         else if (header == gossip + elected) {
             if (!this.leader.equals(content)) {
                 this.leader = content;
+                if(!content.equals(Config.DEFAULT_MASTER_HOSTNAME)){
+                    this.isNewLeaderElected.set(true);
+                }
                 gossip(header, content, requestTime, this.gossipRound);
             }
         }

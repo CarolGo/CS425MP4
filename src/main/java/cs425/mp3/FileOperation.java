@@ -8,6 +8,7 @@ import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -22,7 +23,7 @@ public final class FileOperation {
 
     // Runtime variable
     private final Node node;
-    private final ScheduledExecutorService backupThread;
+    private final ScheduledExecutorService metaBackupThread;
     private final ExecutorService processThread;
     private final ExecutorService singleMainThread;
     private final ExecutorService processFileRecvThread;
@@ -31,6 +32,7 @@ public final class FileOperation {
     private final ServerSocket serverSocket;
     private final ServerSocket fileReceiveSocket;
     private boolean isFileServerRunning;
+    private LocalDateTime lastBackupTime;
 
     // File meta data
     private ConcurrentHashMap<String, List<FileObject>> localFileMap = new ConcurrentHashMap<>();
@@ -43,7 +45,7 @@ public final class FileOperation {
         this.fileReceiveSocket = new ServerSocket(Config.TCP_FILE_TRANS_PORT);
         this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.processFileRecvThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
-        this.backupThread = Executors.newScheduledThreadPool(1);
+        this.metaBackupThread = Executors.newScheduledThreadPool(1);
         this.singleMainThread = Executors.newSingleThreadExecutor();
         this.singleMainRecvThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
@@ -51,8 +53,29 @@ public final class FileOperation {
     }
 
     private void initialMainThreadsJob() {
-        this.backupThread.scheduleAtFixedRate(() -> {
+        this.metaBackupThread.scheduleAtFixedRate(() -> {
                     //Logic here for backup sdfsFileMap
+            String leader = this.node.getLeader();
+            while(leader.equals(this.node.getHostName())){
+                ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
+                Collections.shuffle(hosts);
+                hosts.remove(this.node.getHostName());
+                for(int i = 0 ; i< 3; i++){
+                    try{
+                        Socket backupSocket = connectToServer(hosts.get(i), Config.TCP_PORT);
+                        FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i),"",0);
+                        backupFileCommand.setBackup(this.sdfsFileMap);
+                        FileCommandResult res = sendFileCommandViaSocket(backupFileCommand, backupSocket);
+                        if(res.isHasError()){
+                            logger.debug("Fail to ask node <{}> to request backup", hosts.get(i));
+                            return;
+                        }
+                    } catch(IOException e){
+                        logger.debug("Fail to establish connection with <{}>", hosts);
+                    }
+                }
+
+            }
                 }, 10, Config.BACKUP_PERIOD, TimeUnit.SECONDS
         );
         this.singleMainThread.submit(() -> {
@@ -83,7 +106,7 @@ public final class FileOperation {
 
     public void stopServer() {
         this.isFileServerRunning = false;
-        this.backupThread.shutdown();
+        this.metaBackupThread.shutdown();
         this.processThread.shutdown();
         this.processFileRecvThread.shutdown();
         this.singleMainThread.shutdown();
@@ -297,8 +320,9 @@ public final class FileOperation {
                 if (result.isHasError()) {
                     logger.debug("error when requesting backup");
                 } else {
+                    this.lastBackupTime = result.getTimestamp();
                     this.sdfsFileMap = result.getBackup();
-                    logger.info("backup from <{}> finished", leader);
+                    logger.info("backup from <{}> finished at <{}>", leader, this.lastBackupTime);
                 }
             } catch (IOException e) {
                 logger.debug("Fail to establish coonection with <{}>", leader, e);
@@ -547,6 +571,9 @@ public final class FileOperation {
                     case "backup":
                         backupHandler(out, clientSocket.getInetAddress().getHostName());
                         break;
+                    case "requestBackup":
+                        requestBackupHandler(out, cmd);
+                        break;
                     default:
                         logger.error("Command type error");
                         break;
@@ -564,6 +591,13 @@ public final class FileOperation {
                 logger.error("Close socket failed", e);
             }
         };
+    }
+
+    private void requestBackupHandler(ObjectOutputStream out, FileCommand cmd){
+        this.sdfsFileMap = cmd.getBackup();
+        this.lastBackupTime = cmd.getTimestamp();
+        FileCommandResult result = new FileCommandResult(null, 0);
+        sendFileCommandResultViaSocket(out, result);
     }
 
     private void backupHandler(ObjectOutputStream out, String requesetHost) {

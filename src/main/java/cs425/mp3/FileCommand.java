@@ -5,6 +5,7 @@ import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.List;
 
 
 /**
@@ -40,7 +41,7 @@ public class FileCommand implements Serializable {
     /**
      * backup file map
      */
-    private ConcurrentHashMap<String, FileObject> backup;
+    private ConcurrentHashMap<String, List<FileObject>> backup;
 
     /**
      * Initialize File command object
@@ -103,12 +104,11 @@ public class FileCommand implements Serializable {
         return null;
     }
 
-    public ConcurrentHashMap<String, FileObject> getBackup() {
+    public ConcurrentHashMap<String, List<FileObject>> getBackup() {
         return backup;
     }
 
-    public void setBackup(ConcurrentHashMap<String, FileObject> backup) {
+    public void setBackup(ConcurrentHashMap<String, List<FileObject>> backup) {
         this.backup = backup;
     }
-
 }
