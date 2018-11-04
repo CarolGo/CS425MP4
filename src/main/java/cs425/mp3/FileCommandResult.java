@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -30,7 +31,7 @@ public class FileCommandResult implements Serializable {
     /**
      * backup file map
      */
-    private ConcurrentHashMap<String, FileObject> backup;
+    private ConcurrentHashMap<String, List<FileObject>> backup;
 
 
     public FileCommandResult(Set<String> replicaNodes, int version) {
@@ -76,11 +77,11 @@ public class FileCommandResult implements Serializable {
         return null;
     }
 
-    public ConcurrentHashMap<String, FileObject> getBackup() {
+    public ConcurrentHashMap<String, List<FileObject>> getBackup() {
         return backup;
     }
 
-    public void setBackup(ConcurrentHashMap<String, FileObject> backup) {
+    public void setBackup(ConcurrentHashMap<String, List<FileObject>> backup) {
         this.backup = backup;
     }
 }

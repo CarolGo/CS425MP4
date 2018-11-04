@@ -34,8 +34,8 @@ public final class FileOperation {
     private boolean isFileServerRunning;
 
     // File meta data
-    private ConcurrentHashMap<String, FileObject> localFileMap = new ConcurrentHashMap<>();
-    private ConcurrentHashMap<String, FileObject> sdfsFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, List<FileObject>> localFileMap = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<String, List<FileObject>> sdfsFileMap = new ConcurrentHashMap<>();
 
     public FileOperation(Node n) throws IOException {
         this.node = n;
@@ -101,6 +101,13 @@ public final class FileOperation {
         FileCommandResult queryResault = query(sdfsFileName);
         if (queryResault != null && queryResault.getVersion() >= 0) {
             int newVersion = queryResault.getVersion() + 1;
+            List<FileObject> newList;
+            if (newVersion == 1) {
+                newList = new ArrayList<>(10);
+                this.localFileMap.put(sdfsFileName, newList);
+            } else {
+                newList = this.localFileMap.get(sdfsFileName);
+            }
             FileObject fo = new FileObject(newVersion);
             FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
             FileCommandResult res = null;
@@ -112,7 +119,7 @@ public final class FileOperation {
                     return;
                 }
                 localCopyFileToStorage(new File(localFileName), fo.getUUID(), true);
-                this.localFileMap.put(sdfsFileName, fo);
+                newList.add(fo);
                 logger.info("local replication finished");
             } catch (IOException e) {
                 logger.debug("Failed to put", e);
@@ -153,7 +160,12 @@ public final class FileOperation {
         if (this.localFileMap.get(sdfsFileName) != null) {
             logger.info("File <{}> found in local machine", sdfsFileName);
             try {
-                File localPath = new File(Config.STORAGE_PATH, this.localFileMap.get(sdfsFileName).getUUID());
+                FileObject latest = getLatestLocalVersion(sdfsFileName);
+                if (latest == null) {
+                    logger.error("Latest FileObject is null");
+                    return;
+                }
+                File localPath = new File(Config.STORAGE_PATH, latest.getUUID());
                 localCopyFileToStorage(localPath, localFileName, false);
                 logger.info("Local file <{}> got!!!", sdfsFileName);
             } catch (IOException e) {
@@ -206,6 +218,13 @@ public final class FileOperation {
         }
     }
 
+    private FileObject getLatestLocalVersion(String sdfsFileName) {
+        List<FileObject> foList = this.localFileMap.get(sdfsFileName);
+        if (foList == null) return null;
+        if (foList.size() == 0) return null;
+        return foList.get(foList.size() - 1);
+    }
+
     public void delete(String sdfsFileName) {
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
@@ -214,22 +233,23 @@ public final class FileOperation {
         }
         //leader delete
         if (this.node.getHostName().equals(leader)) {
-            FileObject file = this.sdfsFileMap.get(sdfsFileName);
-            if (file == null) {
+            List<FileObject> fileList = this.sdfsFileMap.get(sdfsFileName);
+            if (fileList == null) {
                 logger.info("delete finished");
             } else {
                 this.sdfsFileMap.remove(sdfsFileName);
-                for (String host : file.getReplicaLocations()) {
-                    try {
-                        Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
-                        FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
-                        if (res.isHasError()) {
-                            logger.debug("Fail to ask node <{}> to delete", host);
+                for (FileObject file : fileList) {
+                    for (String host : file.getReplicaLocations()) {
+                        try {
+                            Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
+                            FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
+                            if (res.isHasError()) {
+                                logger.debug("Fail to ask node <{}> to delete", host);
+                            }
+                        } catch (IOException e) {
+                            logger.debug("Failed to establish connection with <{}>", host, e);
                         }
-                    } catch (IOException e) {
-                        logger.debug("Failed to establish connection with <{}>", host, e);
                     }
-
                 }
                 logger.info("delete finished");
             }
@@ -252,11 +272,12 @@ public final class FileOperation {
         if (!this.node.getLeader().equals(this.node.getHostName())) {
             askBackup();
         }
-        FileObject file = this.sdfsFileMap.get(sdfsFileName);
-        if (file == null) {
-            logger.info("<{}> not stored", sdfsFileName);
-        } else {
-            logger.info(String.join(", ", file.getReplicaLocations()));
+        for (FileObject file : this.sdfsFileMap.get(sdfsFileName)) {
+            if (file == null) {
+                logger.info("<{}> not stored", sdfsFileName);
+            } else {
+                logger.info("File version <{}> replica at: {}", file.getVersion(), String.join(", ", file.getReplicaLocations()));
+            }
         }
     }
 
@@ -283,9 +304,10 @@ public final class FileOperation {
     public void listFileLocal() {
         logger.info("local file includes");
         for (String file : this.localFileMap.keySet()) {
-            FileObject fo = this.localFileMap.get(file);
-            int version = fo.getVersion();
-            logger.info("name: <{}>     verison: <{}>", file, version);
+            for (FileObject fo : this.localFileMap.get(file)) {
+                int version = fo.getVersion();
+                logger.info("name: <{}>     verison: <{}>", file, version);
+            }
         }
     }
 
@@ -456,7 +478,10 @@ public final class FileOperation {
                         dest = new File(Config.STORAGE_PATH, fo.getUUID());
                         saveFileViaSocketInput(dIn, dest);
                         // Only update list when save file is successful
-                        this.localFileMap.put(sdfsName, fo);
+                        if (!this.localFileMap.containsKey(sdfsName)) {
+                            this.localFileMap.put(sdfsName, new ArrayList<>(10));
+                        }
+                        this.localFileMap.get(sdfsName).add(fo);
                         break;
                     case "get":
                         dest = new File(Config.GET_PATH, sdfsName);
@@ -549,37 +574,39 @@ public final class FileOperation {
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
         String fileName = cmd.getFileName();
-        FileObject deleteTarget = this.sdfsFileMap.get(fileName);
-        FileCommandResult result = new FileCommandResult(null, 0);
-        //check if sdfs has this file
-        if (deleteTarget == null) {
-            sendFileCommandResultViaSocket(out, result);
-        } else {
-            Set<String> replicaNodes = deleteTarget.getReplicaLocations();
-            this.sdfsFileMap.remove(fileName);
-            //ask all members to delete the file
-            for (String host : replicaNodes) {
-                if (host.equals(this.node.getHostName())) {
-                    this.localFileMap.remove(fileName);
-                } else {
-                    try {
-                        Socket s = connectToServer(host, Config.TCP_PORT);
-                        FileCommandResult memberResult = sendFileCommandViaSocket(new FileCommand("delete", host, fileName, 0), s);
-                        if (memberResult.isHasError()) {
-                            logger.debug("Fail to ask node <{}> to delete", host);
+        List<FileObject> fileObjects = this.sdfsFileMap.get(fileName);
+        if (fileObjects == null) return;
+        for (FileObject deleteTarget : fileObjects) {
+            FileCommandResult result = new FileCommandResult(null, 0);
+            //check if sdfs has this file
+            if (deleteTarget == null) {
+                sendFileCommandResultViaSocket(out, result);
+            } else {
+                Set<String> replicaNodes = deleteTarget.getReplicaLocations();
+                this.sdfsFileMap.remove(fileName);
+                //ask all members to delete the file
+                for (String host : replicaNodes) {
+                    if (host.equals(this.node.getHostName())) {
+                        this.localFileMap.remove(fileName);
+                    } else {
+                        try {
+                            Socket s = connectToServer(host, Config.TCP_PORT);
+                            FileCommandResult memberResult = sendFileCommandViaSocket(new FileCommand("delete", host, fileName, 0), s);
+                            if (memberResult.isHasError()) {
+                                logger.debug("Fail to ask node <{}> to delete", host);
+                                result.setHasError(true);
+                            }
+
+                        } catch (IOException e) {
+                            logger.debug("Fail to establish connection with <{}>", host, e);
                             result.setHasError(true);
                         }
-
-                    } catch (IOException e) {
-                        logger.debug("Fail to establish connection with <{}>", host, e);
-                        result.setHasError(true);
                     }
                 }
+                logger.info("master delete done");
+                sendFileCommandResultViaSocket(out, result);
             }
-            logger.info("master delete done");
-            sendFileCommandResultViaSocket(out, result);
         }
-
     }
 
     private void memberDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
@@ -597,7 +624,7 @@ public final class FileOperation {
     private void getHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
         String sdfsFileName = cmd.getFileName();
         FileCommandResult result = new FileCommandResult(null, 0);
-        FileObject file = this.localFileMap.get(sdfsFileName);
+        FileObject file = this.getLatestLocalVersion(sdfsFileName);
         if (file == null) {
             result.setHasError(true);
             logger.info("cannot find file <{}> at <{}>", sdfsFileName, this.node.getHostName());
@@ -621,38 +648,33 @@ public final class FileOperation {
     private void putHandler(ObjectOutputStream out, FileCommand cmd, String clientHostname) {
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
-        //store new file
-        if (version == 1) {
-            ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
-            Collections.shuffle(hosts);
-            hosts.remove(clientHostname);
-            if (hosts.size() >= 3) {
-                Set<String> replicaNodes = new HashSet<>();
-                replicaNodes.add(clientHostname);
-                replicaNodes.add(hosts.get(1));
-                replicaNodes.add(hosts.get(2));
-                replicaNodes.add(hosts.get(0));
-                logger.warn("Selected replica nodes: {}", String.join(", ", replicaNodes));
-                //set sdfs meta information
-                FileObject newFile = new FileObject(version);
-                newFile.setReplicaLocations(replicaNodes);
-                this.sdfsFileMap.put(fileName, newFile);
-                //send back fcs
-                FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
-                sendFileCommandResultViaSocket(out, fcs);
-            } else {
-                logger.info("put handler fail to get node list");
-                FileCommandResult fcs = new FileCommandResult(null, 0);
-                fcs.setHasError(false);
-                sendFileCommandResultViaSocket(out, fcs);
-            }
+        if (version == 0) {
+            // Add a list if version is 0
+            this.sdfsFileMap.put(fileName, new ArrayList<>(10));
         }
-        //update new version
-        else {
-            FileObject oldFile = this.sdfsFileMap.get(fileName);
-            oldFile.setVersion(version);
-            Set<String> replicaNodes = oldFile.getReplicaLocations();
+        List<FileObject> thisFileList = this.sdfsFileMap.get(fileName);
+        //store new file or old file with new version
+        ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
+        Collections.shuffle(hosts);
+        hosts.remove(clientHostname);
+        if (hosts.size() >= 3) {
+            Set<String> replicaNodes = new HashSet<>();
+            replicaNodes.add(clientHostname);
+            replicaNodes.add(hosts.get(1));
+            replicaNodes.add(hosts.get(2));
+            replicaNodes.add(hosts.get(0));
+            logger.warn("Selected replica nodes: {}", String.join(", ", replicaNodes));
+            //set sdfs meta information
+            FileObject newFile = new FileObject(version);
+            newFile.setReplicaLocations(replicaNodes);
+            thisFileList.add(newFile);
+            //send back fcs
             FileCommandResult fcs = new FileCommandResult(replicaNodes, version);
+            sendFileCommandResultViaSocket(out, fcs);
+        } else {
+            logger.info("put handler fail to get node list");
+            FileCommandResult fcs = new FileCommandResult(null, 0);
+            fcs.setHasError(false);
             sendFileCommandResultViaSocket(out, fcs);
         }
     }
@@ -661,10 +683,11 @@ public final class FileOperation {
         int version = 0;
         Set<String> replicaLocations = null;
         for (String file : this.sdfsFileMap.keySet()) {
-            if (file.equals(fileName) && this.sdfsFileMap.get(fileName).getVersion() > version) {
-                version = this.sdfsFileMap.get(fileName).getVersion();
-                replicaLocations = this.sdfsFileMap.get(fileName).getReplicaLocations();
-            }
+            if (!file.equals(fileName)) continue;
+            List<FileObject> fileObjects = this.sdfsFileMap.get(file);
+            FileObject last = fileObjects.get(fileObjects.size() - 1);
+            version = last.getVersion();
+            replicaLocations = last.getReplicaLocations();
         }
         FileCommandResult fcs = new FileCommandResult(replicaLocations, version);
         sendFileCommandResultViaSocket(out, fcs);
