@@ -10,7 +10,7 @@ public final class Config {
     /**
      * UDP port used to maintain cluster
      */
-    public static final int UDP_PORT = 18080;
+    public static final int UDP_PORT = 8080;
 
     /**
      * TCP port for file operations

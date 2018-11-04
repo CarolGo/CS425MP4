@@ -61,39 +61,46 @@ public final class FileOperation {
         this.dataBackupThread.submit(() -> {
             while (true) {
                 if (this.node.crashedNode.size() == 0) {
-                    Thread.sleep(100);
+                    Util.noExceptionSleep(500);
                     continue;
                 }
-                if (this.node.getHostName().equals(this.node.getLeader())) {
-                    logger.warn("Leader dealt with crash info");
-                    this.node.crashedNode.forEach((failedNodeHostname, timestamp) -> {
-                        if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
-                            // Already handled before
-                            logger.info("Already handled error: <{}>", failedNodeHostname);
-                            return;
-                        }
-                        this.leaderFailureHandledSet.put(failedNodeHostname, "");
-                        copyAllFilesForFailureNode(failedNodeHostname);
-                    });
-                } else {
-                    logger.warn("Member dealt with crash info");
-                    this.node.crashedNode.forEach((host, timestamp) -> {
-                        FileCommand f = new FileCommand("crash", this.node.getLeader(), host, -1);
-                        try {
-                            Socket s = connectToServer(this.node.getLeader(), Config.TCP_PORT);
-                            FileCommandResult result = sendFileCommandViaSocket(f, s);
-                            logger.info("2");
-                            if (result.isHasError()) {
-                                logger.error("Fail send crash msg");
+                //sleep 5s waiting for possible leader change
+                Util.noExceptionSleep(5000);
+                while (!this.node.isLeaderCrashed.get()) {
+                    HashMap<String, String> copy = new HashMap<>(this.node.crashedNode);
+                    this.node.crashedNode.clear();
+                    if (this.node.getHostName().equals(this.node.getLeader())) {
+                        logger.warn("Leader dealt with crash info");
+                        copy.forEach((failedNodeHostname, timestamp) -> {
+                            if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
+                                // Already handled before
+                                logger.info("Failure already handled: <{}>", failedNodeHostname);
                                 return;
                             }
-                        } catch (IOException e) {
-                            logger.error("Fail send crash msg to leader", e);
-                        }
-                    });
+                            this.leaderFailureHandledSet.put(failedNodeHostname, "");
+                            copyAllFilesForFailureNode(failedNodeHostname);
+                        });
+                    } else {
+                        logger.warn("Member dealt with crash info");
+                        copy.forEach((host, timestamp) -> {
+                            FileCommand f = new FileCommand("crash", this.node.getLeader(), host, -1);
+                            try {
+                                Socket s = connectToServer(this.node.getLeader(), Config.TCP_PORT);
+                                FileCommandResult result = sendFileCommandViaSocket(f, s);
+                                logger.info("2");
+                                if (result.isHasError()) {
+                                    logger.error("Fail send crash msg");
+                                    return;
+                                }
+                            } catch (IOException e) {
+                                logger.error("Fail send crash msg to leader", e);
+                            }
+                        });
+                    }
+                    break;
                 }
-                this.node.crashedNode.clear();
             }
+
         });
         this.metaBackupThread.scheduleAtFixedRate(() -> {
             //Logic here for backup sdfsFileMap
@@ -159,40 +166,37 @@ public final class FileOperation {
                 } else {
                     logger.info("TargetNode is {}", targetNode);
                 }
-                logger.info("H0");
                 ArrayList<String> allAliveHost = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
                 Collections.shuffle(allAliveHost);
-                logger.info("H1");
                 for (String host : allAliveHost) {
                     if (i >= sampleSize) break;
-                    if (host.equals(targetNode)) continue;
                     if (repNodes.contains(host)) continue;
-                    i++;
-                    logger.info("H2 " + host);
                     if (host.equals(this.node.getLeader())) {
                         FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, fo.getVersion());
                         try {
-                            Socket socket = connectToServer(host, Config.TCP_PORT);
-                            logger.info("H3");
+                            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
                             FileCommandResult result = sendFileCommandViaSocket(fc, socket);
-                            logger.info("H3f");
                             if (result.isHasError()) {
                                 logger.error("Has err");
+                                continue;
                             }
+                            //no error, insert information into sdfs map
+                            repNodes.add(host);
+                            i++;
                         } catch (IOException e) {
                             logger.error("crashHandler err", e);
                         }
                     } else {
                         try {
                             Socket socket = connectToServer(host, Config.TCP_PORT);
-                            logger.info("H4");
                             FileCommand f = new FileCommand("getReplica", targetNode, fileName, fo.getVersion());
                             FileCommandResult res = sendFileCommandViaSocket(f, socket);
-                            logger.info("H4f");
                             if (res.isHasError()) {
                                 logger.error("RES fail");
                                 continue;
                             }
+                            //no error, insert information into sdfs map
+                            repNodes.add(host);
                         } catch (IOException e) {
                             logger.error("Crash handle fail", e);
                         }
@@ -801,14 +805,12 @@ public final class FileOperation {
             FileCommandResult result = new FileCommandResult(null, 0);
             result.setBackup(this.sdfsFileMap);
             sendFileCommandResultViaSocket(out, result);
-            logger.info("backup send to <{}>", requesetHost);
         } else {
             logger.debug("Wrong backup request received by <{}>", this.node.getHostName());
         }
     }
 
     private void requestReplicaHandle(ObjectOutputStream out, FileCommand cmd, String requestHost) {
-        logger.info("requestReplicaHandle");
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
         List<FileObject> fileObjects = this.localFileMap.get(fileName);
@@ -817,15 +819,10 @@ public final class FileOperation {
                 try {
                     // Send the requested file back to requester
                     Socket socket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
-                    logger.info("R1");
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
-                    logger.info("R2");
                     sendFileViaSocket(toSend, socket, fileName, version, "put", "");
-                    logger.info("R3");
                     socket.close();
-                    logger.info("R4");
                     sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
-                    logger.info("R5");
                     break;
                 } catch (IOException e) {
                     logger.error("requestReplicaHandle err", e);
@@ -855,14 +852,14 @@ public final class FileOperation {
         String failedNodeHostname = cmd.getFileName();
         if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
             // Already handled before
-            logger.info("Already handled error: <{}>", failedNodeHostname);
+            logger.info("Already handled: <{}>", failedNodeHostname);
             sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
             return;
         }
         this.leaderFailureHandledSet.put(failedNodeHostname, "");
+        sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
         copyAllFilesForFailureNode(failedNodeHostname);
         logger.info("Ready to send crashHandler");
-        sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
     }
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {

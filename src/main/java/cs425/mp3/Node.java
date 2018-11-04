@@ -45,7 +45,6 @@ public class Node {
     private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
     public ConcurrentHashMap<String, String> crashedNode = new ConcurrentHashMap<>();
     public AtomicBoolean isLeaderCrashed = new AtomicBoolean(false);
-    public AtomicBoolean isNewLeaderElected = new AtomicBoolean(false);
 
 
     public Node() throws UnknownHostException {
@@ -174,7 +173,7 @@ public class Node {
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
                     Util.noExceptionSleep(1000);
                     int i = 0;
-                    for (; i < 5; i++) {
+                    for (; i < 8; i++) {
                         for (String host : this.ackList.keySet()) {
                             if (this.ackList.get(host).equals("f")) {
                                 send(host, this.port, isAlive, "", Instant.now().toString());
@@ -190,7 +189,6 @@ public class Node {
                             logger.info("failure of <{}> detected at <{}>", host, Instant.now());
                             if (host.equals(this.leader)) {
                                 logger.info("start leader election protocol");
-                                this.isLeaderCrashed.set(true);
                                 election();
                             }
                             //add crashed node, avoid duplicated add
@@ -214,6 +212,7 @@ public class Node {
         return () -> {
             Thread.currentThread().setName("electionWorker");
             while (this.leader.equals("")) {
+                this.isLeaderCrashed.set(true);
                 int electionSendCnt = 0;
                 for (String host : this.memberList.keySet()) {
                     if (Integer.parseInt(this.hostName.substring(15, 17)) < Integer.parseInt(host.substring(15, 17))) {
@@ -374,9 +373,7 @@ public class Node {
         else if (header == gossip + elected) {
             if (!this.leader.equals(content)) {
                 this.leader = content;
-                if (!content.equals(Config.DEFAULT_MASTER_HOSTNAME)) {
-                    this.isNewLeaderElected.set(true);
-                }
+                this.isLeaderCrashed.set(false);
                 gossip(header, content, requestTime, this.gossipRound);
             }
         }
