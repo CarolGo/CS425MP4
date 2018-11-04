@@ -9,9 +9,7 @@ import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -24,6 +22,7 @@ public final class FileOperation {
 
     // Runtime variable
     private final Node node;
+    private final ScheduledExecutorService backupThread;
     private final ExecutorService processThread;
     private final ExecutorService singleMainThread;
     private final ExecutorService processFileRecvThread;
@@ -44,6 +43,7 @@ public final class FileOperation {
         this.fileReceiveSocket = new ServerSocket(Config.TCP_FILE_TRANS_PORT);
         this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.processFileRecvThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+        this.backupThread = Executors.newScheduledThreadPool(1);
         this.singleMainThread = Executors.newSingleThreadExecutor();
         this.singleMainRecvThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
@@ -51,6 +51,10 @@ public final class FileOperation {
     }
 
     private void initialMainThreadsJob() {
+        this.backupThread.scheduleAtFixedRate(() -> {
+                    //Logic here for backup sdfsFileMap
+                }, 10, Config.BACKUP_PERIOD, TimeUnit.SECONDS
+        );
         this.singleMainThread.submit(() -> {
             Thread.currentThread().setName("FS-main");
             logger.info("File server started listening on <{}>...", this.serverHostname);
@@ -79,6 +83,7 @@ public final class FileOperation {
 
     public void stopServer() {
         this.isFileServerRunning = false;
+        this.backupThread.shutdown();
         this.processThread.shutdown();
         this.processFileRecvThread.shutdown();
         this.singleMainThread.shutdown();
