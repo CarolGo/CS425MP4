@@ -3,12 +3,14 @@ package cs425.mp3;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.net.*;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Random;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -192,8 +194,9 @@ public class Node {
                                 election();
                             }
                             //add crashed node, avoid duplicated add
-                            if(!this.crashedNode.contains(host)){
-                                this.crashedNode.put(host,"");
+                            if (!this.crashedNode.contains(host)) {
+                                this.crashedNode.put(host, "");
+                                logger.info("Crashed node <{}> saved to map", host);
                             }
                             needUpdate = true;
                         }
@@ -371,7 +374,7 @@ public class Node {
         else if (header == gossip + elected) {
             if (!this.leader.equals(content)) {
                 this.leader = content;
-                if(!content.equals(Config.DEFAULT_MASTER_HOSTNAME)){
+                if (!content.equals(Config.DEFAULT_MASTER_HOSTNAME)) {
                     this.isNewLeaderElected.set(true);
                 }
                 gossip(header, content, requestTime, this.gossipRound);

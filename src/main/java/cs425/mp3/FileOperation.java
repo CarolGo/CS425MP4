@@ -23,6 +23,7 @@ public final class FileOperation {
 
     // Runtime variable
     private final Node node;
+    private final ExecutorService dataBackupThread;
     private final ScheduledExecutorService metaBackupThread;
     private final ExecutorService processThread;
     private final ExecutorService singleMainThread;
@@ -38,6 +39,9 @@ public final class FileOperation {
     private ConcurrentHashMap<String, List<FileObject>> localFileMap = new ConcurrentHashMap<>();
     private ConcurrentHashMap<String, List<FileObject>> sdfsFileMap = new ConcurrentHashMap<>();
 
+    // Failure cached queue
+    private ConcurrentLinkedQueue<String> leaderFailureHandleQueue = new ConcurrentLinkedQueue<>();
+
     public FileOperation(Node n) throws IOException {
         this.node = n;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
@@ -46,6 +50,7 @@ public final class FileOperation {
         this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.processFileRecvThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.metaBackupThread = Executors.newScheduledThreadPool(1);
+        this.dataBackupThread = Executors.newSingleThreadExecutor();
         this.singleMainThread = Executors.newSingleThreadExecutor();
         this.singleMainRecvThread = Executors.newSingleThreadExecutor();
         this.isFileServerRunning = true;
@@ -53,24 +58,36 @@ public final class FileOperation {
     }
 
     private void initialMainThreadsJob() {
+        this.dataBackupThread.submit(() -> {
+            while (true) {
+                if (this.node.crashedNode.size() == 0) {
+                    Thread.sleep(100);
+                    continue;
+                }
+                if (this.node.getHostName().equals(this.node.getLeader())) {
+                    logger.warn("Leader dealt with crash info");
+                } else {
+                    logger.warn("Member dealt with crash info");
+                }
+            }
+        });
         this.metaBackupThread.scheduleAtFixedRate(() -> {
                     //Logic here for backup sdfsFileMap
             String leader = this.node.getLeader();
-            while(leader.equals(this.node.getHostName())){
+            while (leader.equals(this.node.getHostName())) {
                 ArrayList<String> hosts = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
                 Collections.shuffle(hosts);
                 hosts.remove(this.node.getHostName());
-                for(int i = 0 ; i< 3; i++){
-                    try{
+                for (int i = 0; i < 3; i++) {
+                    try {
                         Socket backupSocket = connectToServer(hosts.get(i), Config.TCP_PORT);
-                        FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i),"",0);
+                        FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i), "", 0);
                         backupFileCommand.setBackup(this.sdfsFileMap);
                         FileCommandResult res = sendFileCommandViaSocket(backupFileCommand, backupSocket);
-                        if(res.isHasError()){
+                        if (res.isHasError()) {
                             logger.debug("Fail to ask node <{}> to request backup", hosts.get(i));
-                            return;
                         }
-                    } catch(IOException e){
+                    } catch (IOException e) {
                         logger.debug("Fail to establish connection with <{}>", hosts);
                     }
                 }
@@ -107,6 +124,7 @@ public final class FileOperation {
     public void stopServer() {
         this.isFileServerRunning = false;
         this.metaBackupThread.shutdown();
+        this.dataBackupThread.shutdown();
         this.processThread.shutdown();
         this.processFileRecvThread.shutdown();
         this.singleMainThread.shutdown();
@@ -593,7 +611,7 @@ public final class FileOperation {
         };
     }
 
-    private void requestBackupHandler(ObjectOutputStream out, FileCommand cmd){
+    private void requestBackupHandler(ObjectOutputStream out, FileCommand cmd) {
         this.sdfsFileMap = cmd.getBackup();
         this.lastBackupTime = cmd.getTimestamp();
         FileCommandResult result = new FileCommandResult(null, 0);
