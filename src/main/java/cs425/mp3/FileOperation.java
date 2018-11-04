@@ -122,6 +122,9 @@ public final class FileOperation {
                 return;
             }
             for (String host : res.getReplicaNodes()) {
+                if (host.equals(this.node.getHostName())) {
+                    continue;
+                }
                 //TODO: Multi-thread send?
                 Socket replicaSocket;
                 try {
