@@ -164,9 +164,10 @@ public final class FileOperation {
                 Collections.shuffle(allAliveHost);
                 logger.info("H1");
                 for (String host : allAliveHost) {
-                    if (i++ >= sampleSize) break;
+                    if (i >= sampleSize) break;
                     if (host.equals(targetNode)) continue;
                     if (repNodes.contains(host)) continue;
+                    i++;
                     logger.info("H2 " + host);
                     if (host.equals(this.node.getLeader())) {
                         FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, fo.getVersion());
@@ -704,6 +705,7 @@ public final class FileOperation {
     }
 
     private void requestReplicaHandle(ObjectOutputStream out, FileCommand cmd, String requestHost) {
+        logger.info("requestReplicaHandle");
         int version = cmd.getVersionNum();
         String fileName = cmd.getFileName();
         List<FileObject> fileObjects = this.localFileMap.get(fileName);
@@ -712,10 +714,15 @@ public final class FileOperation {
                 try {
                     // Send the requested file back to requester
                     Socket socket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+                    logger.info("R1");
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
+                    logger.info("R2");
                     sendFileViaSocket(toSend, socket, fileName, version, "put");
+                    logger.info("R3");
                     socket.close();
+                    logger.info("R4");
                     sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
+                    logger.info("R5");
                     break;
                 } catch (IOException e) {
                     logger.error("requestReplicaHandle err", e);
@@ -746,13 +753,13 @@ public final class FileOperation {
         if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
             // Already handled before
             logger.info("Already handled error: <{}>", failedNodeHostname);
+            sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
             return;
         }
         this.leaderFailureHandledSet.put(failedNodeHostname, "");
         copyAllFilesForFailureNode(failedNodeHostname);
         logger.info("Ready to send crashHandler");
         sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
-
     }
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
