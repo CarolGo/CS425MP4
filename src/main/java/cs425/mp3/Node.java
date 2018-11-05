@@ -45,6 +45,7 @@ public class Node {
     private ConcurrentHashMap<String, String> ackList = new ConcurrentHashMap<>();
     public ConcurrentHashMap<String, String> crashedNode = new ConcurrentHashMap<>();
     public AtomicBoolean isLeaderCrashed = new AtomicBoolean(false);
+    public AtomicBoolean isLeaderChanged = new AtomicBoolean(false);
 
 
     public Node() throws UnknownHostException {
@@ -173,7 +174,7 @@ public class Node {
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
                     Util.noExceptionSleep(1000);
                     int i = 0;
-                    for (; i < 8; i++) {
+                    for (; i < 4; i++) {
                         for (String host : this.ackList.keySet()) {
                             if (this.ackList.get(host).equals("f")) {
                                 send(host, this.port, isAlive, "", Instant.now().toString());
@@ -226,6 +227,8 @@ public class Node {
                     Util.noExceptionSleep(this.electionPeriod);
                 } else {
                     this.leader = this.hostName;
+                    this.isLeaderCrashed.set(false);
+                    this.isLeaderChanged.set(true);
                     logger.info("self elected at <{}>", this.hostName);
                     gossip(elected + gossip, this.leader, Instant.now().toString(), this.gossipRound);
                 }
@@ -393,7 +396,7 @@ public class Node {
         if (newMap.equals(this.memberList) || this.lastGossipTime.isAfter(Instant.parse(requestTime))) {
             return false;
         } else {
-            logger.info("request update at <{}>", requestTime);
+            //logger.info("request update at <{}>", requestTime);
             this.memberList = newMap;
             this.lastGossipTime = Instant.parse(requestTime);
             return true;
@@ -446,6 +449,10 @@ public class Node {
 
     public String[] getNodesArray() {
         return this.memberList.keySet().toArray(new String[0]);
+    }
+
+    public ConcurrentHashMap<String, String> getMemberList() {
+        return memberList;
     }
 
     public String getHostName() {

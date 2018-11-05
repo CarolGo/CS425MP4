@@ -45,9 +45,11 @@ public class App {
                     String[] arguments = cmd.split(" ");
                     switch (arguments[0]) {
                         case "put": //put localfilename sdfsfilename
+                            logger.info("put starts");
                             fOper.put(arguments[1], arguments[2]);
                             break;
                         case "get": //get sdfsfilename localfilename
+                            logger.info("get starts");
                             fOper.get(arguments[1], arguments[2]);
                             break;
                         case "delete":  //delete sdfsfilename

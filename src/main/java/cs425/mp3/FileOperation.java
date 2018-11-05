@@ -12,6 +12,7 @@ import java.time.LocalDateTime;
 import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.time.Instant;
 
 /**
  * All operations regarding distributed FS
@@ -33,7 +34,7 @@ public final class FileOperation {
     private final ServerSocket serverSocket;
     private final ServerSocket fileReceiveSocket;
     private boolean isFileServerRunning;
-    private LocalDateTime lastBackupTime;
+    private LocalDateTime lastBackupTime = LocalDateTime.now();
 
     // File meta data
     private ConcurrentHashMap<String, List<FileObject>> localFileMap = new ConcurrentHashMap<>();
@@ -60,17 +61,17 @@ public final class FileOperation {
     private void initialMainThreadsJob() {
         this.dataBackupThread.submit(() -> {
             while (true) {
-                if (this.node.crashedNode.size() == 0) {
+                if (this.node.crashedNode.size() == 0 && this.leaderFailureHandledSet.isEmpty()) {
                     Util.noExceptionSleep(500);
                     continue;
                 }
-                //sleep 5s waiting for possible leader change
-                Util.noExceptionSleep(5000);
+                //sleep 1s waiting for possible leader change
+                Util.noExceptionSleep(1000);
                 while (!this.node.isLeaderCrashed.get()) {
                     HashMap<String, String> copy = new HashMap<>(this.node.crashedNode);
                     this.node.crashedNode.clear();
                     if (this.node.getHostName().equals(this.node.getLeader())) {
-                        logger.warn("Leader dealt with crash info");
+                        logger.info("Leader <{}> dealt with crash info", this.node.getLeader());
                         copy.forEach((failedNodeHostname, timestamp) -> {
                             if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
                                 // Already handled before
@@ -78,7 +79,6 @@ public final class FileOperation {
                                 return;
                             }
                             this.leaderFailureHandledSet.put(failedNodeHostname, "");
-                            copyAllFilesForFailureNode(failedNodeHostname);
                         });
                     } else {
                         logger.warn("Member dealt with crash info");
@@ -96,6 +96,13 @@ public final class FileOperation {
                                 logger.error("Fail send crash msg to leader", e);
                             }
                         });
+                    }
+                    if (this.node.getLeader().equals(this.node.getHostName())) {
+                        //sleep 5s for master getting all the failure information
+                        Util.noExceptionSleep(1000);
+                        if(this.leaderFailureHandledSet.isEmpty())
+                            return;
+                        copyAllFilesForFailureNodes();
                     }
                     break;
                 }
@@ -120,7 +127,7 @@ public final class FileOperation {
                         logger.debug("Fail to ask node <{}> to request backup", hosts.get(i));
                     }
                 } catch (IOException e) {
-                    logger.debug("Fail to establish connection with <{}>", hosts);
+                    logger.debug("Fail to establish connection with <{}>", hosts.get(i));
                 }
             }
 
@@ -151,15 +158,45 @@ public final class FileOperation {
         });
     }
 
-    private void copyAllFilesForFailureNode(String failedNodeHostname) {
+    private void copyAllFilesForFailureNodes() {
+        logger.info("Leader <{}> starts failure recovery", this.node.getLeader());
+        //before the leader handler the error, it must get the lastest backup
+        if (this.node.isLeaderChanged.get()) {
+            logger.info("New leader starts gather backup");
+            this.node.isLeaderChanged.set(false);
+            for (String host : this.node.getMemberList().keySet()) {
+                try {
+                    Socket s = connectToServer(host, Config.TCP_PORT);
+                    FileCommandResult res = sendFileCommandViaSocket(new FileCommand("backup", host, "", 0), s);
+                    if (res.isHasError()) {
+                        logger.info("Fail to ask <{}> for backup", host);
+                        continue;
+                    }
+                    LocalDateTime backupTime = res.getTimestamp();
+                    if (backupTime.isAfter(this.lastBackupTime)) {
+                        this.sdfsFileMap = res.getBackup();
+                        logger.info("Latest backup from <{}>", host);
+                    }
+                } catch (IOException e) {
+                    logger.debug("Fail to establish connection with <{}>", host, e);
+                    continue;
+                }
+            }
+        }
+        Util.noExceptionSleep(1000);
+        logger.info("Start handle failure nodes of length <{}>", this.leaderFailureHandledSet.size());
         this.sdfsFileMap.forEach((fileName, fileObjects) -> {
             for (FileObject fo : fileObjects) {
+                Set<String> needHandleNodes = new HashSet<>();
                 Set<String> repNodes = fo.getReplicaLocations();
-                if (!repNodes.contains(failedNodeHostname)) continue;
-                repNodes.remove(failedNodeHostname);
-                logger.warn("Rep nodes candidate list length: {}", repNodes.size());
-                int sampleSize = 4 - repNodes.size();
-                int i = 0;
+                for(String failure: this.leaderFailureHandledSet.keySet()){
+                    if(repNodes.contains(failure)){
+                        needHandleNodes.add(failure);
+                        repNodes.remove(failure);
+                    }
+                }
+                if (needHandleNodes.isEmpty()) continue;
+                logger.debug("Replica nodes candidate:<{}>", String.join(", ",repNodes));
                 String targetNode = repNodes.toArray(new String[0])[0];
                 if (targetNode == null) {
                     logger.error("TargetNode is NULL");
@@ -168,6 +205,8 @@ public final class FileOperation {
                 }
                 ArrayList<String> allAliveHost = new ArrayList<>(Arrays.asList(this.node.getNodesArray()));
                 Collections.shuffle(allAliveHost);
+                int sampleSize = needHandleNodes.size();
+                int i = 0;
                 for (String host : allAliveHost) {
                     if (i >= sampleSize) break;
                     if (repNodes.contains(host)) continue;
@@ -181,7 +220,7 @@ public final class FileOperation {
                                 continue;
                             }
                             //no error, insert information into sdfs map
-                            repNodes.add(host);
+                            fo.getReplicaLocations().add(host);
                             i++;
                         } catch (IOException e) {
                             logger.error("crashHandler err", e);
@@ -196,7 +235,8 @@ public final class FileOperation {
                                 continue;
                             }
                             //no error, insert information into sdfs map
-                            repNodes.add(host);
+                            fo.getReplicaLocations().add(host);
+                            i++;
                         } catch (IOException e) {
                             logger.error("Crash handle fail", e);
                         }
@@ -204,6 +244,8 @@ public final class FileOperation {
                 }
             }
         });
+        this.leaderFailureHandledSet.clear();
+        logger.info("Crash recovery Finished!!!");
     }
 
     public void stopServer() {
@@ -224,6 +266,7 @@ public final class FileOperation {
     }
 
     public void put(String localFileName, String sdfsFileName) {
+        Instant start = Instant.now();
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
             logger.error("Leader empty, can not put");
@@ -284,9 +327,12 @@ public final class FileOperation {
         } else {
             logger.info("Failure on query in put operation");
         }
+        Instant end = Instant.now();
+        logger.info("put takes <{}>", end.getEpochSecond() - start.getEpochSecond());
     }
 
     public void get(String sdfsFileName, String localFileName) {
+        Instant start = Instant.now();
         // Not in local, get from Master
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
@@ -329,6 +375,8 @@ public final class FileOperation {
         } else {
             logger.info("Failure on query in put operation");
         }
+        Instant end = Instant.now();
+        logger.info("get takes <{}>", end.getEpochSecond() - start.getEpochSecond());
     }
 
     private FileObject getLatestLocalVersion(String sdfsFileName) {
@@ -351,6 +399,7 @@ public final class FileOperation {
                 logger.info("delete finished");
             } else {
                 this.sdfsFileMap.remove(sdfsFileName);
+                this.lastBackupTime = LocalDateTime.now();
                 for (FileObject file : fileList) {
                     for (String host : file.getReplicaLocations()) {
                         try {
@@ -411,7 +460,7 @@ public final class FileOperation {
                 } else {
                     this.lastBackupTime = result.getTimestamp();
                     this.sdfsFileMap = result.getBackup();
-                    logger.info("backup from <{}> finished at <{}>", leader, this.lastBackupTime);
+                    //logger.info("backup from <{}> finished at <{}>", leader, this.lastBackupTime);
                 }
             } catch (IOException e) {
                 logger.debug("Fail to establish coonection with <{}>", leader, e);
@@ -510,7 +559,7 @@ public final class FileOperation {
         } else {
             dest = new File(Config.GET_PATH, newFileName);
         }
-        logger.debug("Copy file from <{}> to <{}>", originalPath.getAbsolutePath(), dest.getAbsolutePath());
+        //logger.debug("Copy file from <{}> to <{}>", originalPath.getAbsolutePath(), dest.getAbsolutePath());
         try (BufferedInputStream is = new BufferedInputStream(new FileInputStream(originalPath))) {
             try (BufferedOutputStream os = new BufferedOutputStream(new FileOutputStream(dest))) {
                 bufferedReadWrite(is, os, 8192);
@@ -566,7 +615,7 @@ public final class FileOperation {
         try {
             out.writeObject(fcs);
             out.flush();
-            logger.info("file command result sent at '{}'.", fcs.getTimestamp());
+            //logger.info("file command result sent at '{}'.", fcs.getTimestamp());
         } catch (IOException e) {
             logger.debug("Failed to establish connection", e);
         }
@@ -584,7 +633,7 @@ public final class FileOperation {
      */
     private void sendFileViaSocket(File toSendFile, Socket socket, String sdfsName, int version, String intention, String fileNameForNonPut) throws IOException {
         try (BufferedInputStream in = new BufferedInputStream(new FileInputStream(toSendFile))) {
-            logger.debug("[{}] Sending <{}>({}b) version <{}> to <{}>", intention, toSendFile.getAbsolutePath(), toSendFile.length(), version, socket.getRemoteSocketAddress());
+            //logger.debug("[{}] Sending <{}>({}b) version <{}> to <{}>", intention, toSendFile.getAbsolutePath(), toSendFile.length(), version, socket.getRemoteSocketAddress());
             DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
             dOut.writeUTF(intention.toLowerCase());
             dOut.writeUTF(sdfsName);
@@ -652,7 +701,7 @@ public final class FileOperation {
                 int fileVersion = dIn.readInt();
                 long fileSize = dIn.readLong();
                 String extraInfo = dIn.readUTF();
-                logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
+                //logger.debug("[{}] Receiving file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
                 File dest;
                 switch (intention) {
                     case "put":
@@ -677,7 +726,7 @@ public final class FileOperation {
                     default:
                         throw new IOException("Unknown intention");
                 }
-                logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
+                //logger.debug("[{}] Got file <{}>({}b) version <{}> from <{}>", intention, sdfsName, fileSize, fileVersion, remoteHn);
             } catch (IOException e) {
                 logger.error("Receive file failed", e);
                 if (intention.equals("get")) this.hasReceivedSuccess.set(false);
@@ -696,7 +745,7 @@ public final class FileOperation {
     private Runnable mainFileServer(Socket clientSocket) {
         return () -> {
             Thread.currentThread().setName("FS-process");
-            logger.info("Connection from client <{}>", clientSocket.getRemoteSocketAddress());
+            //logger.info("Connection from client <{}>", clientSocket.getRemoteSocketAddress());
             // Logic start
             try {
                 // Output goes first or the input will block forever
@@ -707,7 +756,7 @@ public final class FileOperation {
                     logger.error("FileCommand is null");
                     return;
                 }
-                logger.info("file command received from <{}>, type <{}>", clientSocket.getInetAddress().getHostName(), cmd.getType());
+                //logger.info("file command received from <{}>, type <{}>", clientSocket.getInetAddress().getHostName(), cmd.getType());
                 switch (cmd.getType()) {
                     case "query":
                         queryHandler(out, cmd.getFileName());
@@ -734,7 +783,7 @@ public final class FileOperation {
                         logger.info("Z1");
                         return;
                     case "requestBackup":
-                        requestBackupHandler(out, cmd);
+                        saveBackupHandler(out, cmd);
                         break;
                     case "crash":
                         if (this.node.getLeader().equals(this.node.getHostName())) {
@@ -778,7 +827,7 @@ public final class FileOperation {
             sendFileCommandResultViaSocket(out, fcr);
             return;
         }
-        logger.info("Got matching file, sending to {}", targetHostname);
+        //logger.info("Got matching file, sending to {}", targetHostname);
         sendFileCommandResultViaSocket(out, fcr);
         // Send this file back
         FileObject file = oFo.get();
@@ -787,13 +836,13 @@ public final class FileOperation {
             File toSend = new File(Config.STORAGE_PATH, file.getUUID());
             sendFileViaSocket(toSend, transSocket, whichFile, targetV, "version", saveToName);
             transSocket.close();
-            logger.info("Requested file <{}> version <{}> sent back", whichFile, targetV);
+            //logger.info("Requested file <{}> version <{}> sent back", whichFile, targetV);
         } catch (IOException e) {
             logger.debug("Fail to send file", e);
         }
     }
 
-    private void requestBackupHandler(ObjectOutputStream out, FileCommand cmd) {
+    private void saveBackupHandler(ObjectOutputStream out, FileCommand cmd) {
         this.sdfsFileMap = cmd.getBackup();
         this.lastBackupTime = cmd.getTimestamp();
         FileCommandResult result = new FileCommandResult(null, 0);
@@ -801,13 +850,10 @@ public final class FileOperation {
     }
 
     private void backupHandler(ObjectOutputStream out, String requesetHost) {
-        if (this.node.getLeader().equals(this.node.getHostName())) {
-            FileCommandResult result = new FileCommandResult(null, 0);
-            result.setBackup(this.sdfsFileMap);
-            sendFileCommandResultViaSocket(out, result);
-        } else {
-            logger.debug("Wrong backup request received by <{}>", this.node.getHostName());
-        }
+        FileCommandResult result = new FileCommandResult(null, 0);
+        result.setBackup(this.sdfsFileMap);
+        result.setTimestamp(this.lastBackupTime);
+        sendFileCommandResultViaSocket(out, result);
     }
 
     private void requestReplicaHandle(ObjectOutputStream out, FileCommand cmd, String requestHost) {
@@ -852,14 +898,12 @@ public final class FileOperation {
         String failedNodeHostname = cmd.getFileName();
         if (this.leaderFailureHandledSet.containsKey(failedNodeHostname)) {
             // Already handled before
-            logger.info("Already handled: <{}>", failedNodeHostname);
+            //logger.info("Already handled: <{}>", failedNodeHostname);
             sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
             return;
         }
         this.leaderFailureHandledSet.put(failedNodeHostname, "");
         sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
-        copyAllFilesForFailureNode(failedNodeHostname);
-        logger.info("Ready to send crashHandler");
     }
 
     private void masterDeleteHandler(ObjectOutputStream out, FileCommand cmd, String requestHost) {
@@ -874,6 +918,7 @@ public final class FileOperation {
             } else {
                 Set<String> replicaNodes = deleteTarget.getReplicaLocations();
                 this.sdfsFileMap.remove(fileName);
+                this.lastBackupTime = LocalDateTime.now();
                 //ask all members to delete the file
                 for (String host : replicaNodes) {
                     if (host.equals(this.node.getHostName())) {
@@ -904,7 +949,7 @@ public final class FileOperation {
         if (this.localFileMap.get(fileName) != null) {
             this.localFileMap.remove(fileName);
             sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
-            logger.info("delete <{}> requested by master <{}>", fileName, requestHost);
+            //logger.info("delete <{}> requested by master <{}>", fileName, requestHost);
         } else {
             sendFileCommandResultViaSocket(out, new FileCommandResult(null, 0));
         }
@@ -930,7 +975,7 @@ public final class FileOperation {
             File toSend = new File(Config.STORAGE_PATH, file.getUUID());
             sendFileViaSocket(toSend, transSocket, sdfsFileName, result.getVersion(), "get", saveToName);
             transSocket.close();
-            logger.info("Requested file <{}> version <{}> sent back", sdfsFileName, result.getVersion());
+            //logger.info("Requested file <{}> version <{}> sent back", sdfsFileName, result.getVersion());
         } catch (IOException e) {
             logger.debug("Fail to send file", e);
         }
@@ -946,6 +991,7 @@ public final class FileOperation {
         if (version == 1) {
             // Add a list if version is 1
             this.sdfsFileMap.put(fileName, new ArrayList<>(10));
+            this.lastBackupTime = LocalDateTime.now();
             logger.debug("Version is 1, add new");
         }
         List<FileObject> thisFileList = this.sdfsFileMap.get(fileName);
@@ -960,7 +1006,7 @@ public final class FileOperation {
             replicaNodes.add(hosts.get(1));
             replicaNodes.add(hosts.get(2));
             replicaNodes.add(hosts.get(0));
-            logger.warn("Selected replica nodes: {}", String.join(", ", replicaNodes));
+            //logger.warn("Selected replica nodes: {}", String.join(", ", replicaNodes));
             //set sdfs meta information
             FileObject newFile = new FileObject(version);
             newFile.setReplicaLocations(replicaNodes);
