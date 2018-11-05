@@ -65,8 +65,8 @@ public final class FileOperation {
                     Util.noExceptionSleep(500);
                     continue;
                 }
-                //sleep 1s waiting for possible leader change
-                Util.noExceptionSleep(1000);
+                //sleep 2s waiting for possible leader change
+                Util.noExceptionSleep(2000);
                 while (!this.node.isLeaderCrashed.get()) {
                     HashMap<String, String> copy = new HashMap<>(this.node.crashedNode);
                     this.node.crashedNode.clear();
@@ -98,9 +98,9 @@ public final class FileOperation {
                         });
                     }
                     if (this.node.getLeader().equals(this.node.getHostName())) {
-                        //sleep 5s for master getting all the failure information
-                        Util.noExceptionSleep(1000);
-                        if(this.leaderFailureHandledSet.isEmpty())
+                        //sleep 2s for master getting all the failure information
+                        Util.noExceptionSleep(2000);
+                        if (this.leaderFailureHandledSet.isEmpty())
                             return;
                         copyAllFilesForFailureNodes();
                     }
@@ -183,20 +183,20 @@ public final class FileOperation {
                 }
             }
         }
-        Util.noExceptionSleep(1000);
+        Util.noExceptionSleep(2000);
         logger.info("Start handle failure nodes of length <{}>", this.leaderFailureHandledSet.size());
         this.sdfsFileMap.forEach((fileName, fileObjects) -> {
             for (FileObject fo : fileObjects) {
                 Set<String> needHandleNodes = new HashSet<>();
                 Set<String> repNodes = fo.getReplicaLocations();
-                for(String failure: this.leaderFailureHandledSet.keySet()){
-                    if(repNodes.contains(failure)){
+                for (String failure : this.leaderFailureHandledSet.keySet()) {
+                    if (repNodes.contains(failure)) {
                         needHandleNodes.add(failure);
                         repNodes.remove(failure);
                     }
                 }
                 if (needHandleNodes.isEmpty()) continue;
-                logger.debug("Replica nodes candidate:<{}>", String.join(", ",repNodes));
+                logger.debug("Number of replica candidate:<{}>", String.join(", ", repNodes));
                 String targetNode = repNodes.toArray(new String[0])[0];
                 if (targetNode == null) {
                     logger.error("TargetNode is NULL");
@@ -265,7 +265,7 @@ public final class FileOperation {
         }
     }
 
-    public void put(String localFileName, String sdfsFileName) {
+    public void put(String localFileName, String sdfsFileName) {s
         Instant start = Instant.now();
         String leader = this.node.getLeader();
         if (leader.isEmpty()) {
@@ -341,6 +341,9 @@ public final class FileOperation {
         }
         FileCommandResult queryResault = query(sdfsFileName);
         if (queryResault != null && queryResault.getVersion() >= 0) {
+            if(queryResault.getReplicaNodes() == null){
+                logger.info("Requested file not stored");
+            }
             for (String host : queryResault.getReplicaNodes()) {
                 try {
                     Socket getSocket = connectToServer(host, Config.TCP_PORT);
@@ -403,17 +406,21 @@ public final class FileOperation {
                 for (FileObject file : fileList) {
                     for (String host : file.getReplicaLocations()) {
                         try {
-                            Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
-                            FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
-                            if (res.isHasError()) {
-                                logger.debug("Fail to ask node <{}> to delete", host);
+                            if (host.equals(this.node.getHostName())) {
+                                this.localFileMap.remove(sdfsFileName);
+                            } else {
+                                Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
+                                FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
+                                if (res.isHasError()) {
+                                    logger.debug("Fail to ask node <{}> to delete", host);
+                                }
                             }
                         } catch (IOException e) {
                             logger.debug("Failed to establish connection with <{}>", host, e);
                         }
                     }
                 }
-                logger.info("delete finished");
+                logger.info("delete finished!!!");
             }
         } else {   //member delete
             try {
@@ -548,6 +555,22 @@ public final class FileOperation {
         }
         return res;
     }
+
+    public void printAll(){
+        if(this.node.getLeader().equals(this.node.getHostName())){
+            logger.info("Last backup time: ", lastBackupTime.toString());
+            this.sdfsFileMap.forEach((fileName, fileObjects) ->{
+                logger.info("file Name: <{}>", fileName);
+                for(FileObject fo: fileObjects){
+                    logger.info("   version: <{}>", fo.getVersion());
+                    logger.info("       replica: <{}>", String.join(", ",fo.getReplicaLocations()));
+                }
+            });
+        }else{
+            logger.info("Only the leader can print all");
+        }
+    }
+
 
     /**
      * Copy file to a path

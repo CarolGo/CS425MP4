@@ -174,7 +174,7 @@ public class Node {
                     send(keys.get(next3), this.port, isAlive, "", Instant.now().toString());
                     Util.noExceptionSleep(1000);
                     int i = 0;
-                    for (; i < 4; i++) {
+                    for (; i < 8; i++) {
                         for (String host : this.ackList.keySet()) {
                             if (this.ackList.get(host).equals("f")) {
                                 send(host, this.port, isAlive, "", Instant.now().toString());

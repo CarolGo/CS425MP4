@@ -35,5 +35,5 @@ public final class Config {
     public static final int RW_TIMEOUT_SECOND = 300;
     public static final long FILE_RECV_TIMEOUT_MILLSECOND = 120_000;
 
-    public static final int BACKUP_PERIOD = 10;
+    public static final int BACKUP_PERIOD = 5;
 }

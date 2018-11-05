@@ -22,7 +22,7 @@ public class App {
         //TODO: Remove when FSO good
         node.join();
         while (true) {
-            logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions): ");
+            logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions,printAll): ");
             cmd = input.nextLine();
             logger.trace("User input: {}", cmd);
             switch (cmd) {
@@ -63,6 +63,9 @@ public class App {
                             break;
                         case "get-versions":    //get-versions sdfsfilename numversions localfilename
                             fOper.getVersions(arguments[1], arguments[2], arguments[3]);
+                            break;
+                        case "printAll":
+                            fOper.printAll();
                             break;
                         default:
                             logger.warn("Use input invalid");
