@@ -5,7 +5,7 @@
     <modelVersion>4.0.0</modelVersion>
 
     <groupId>CS425</groupId>
-    <artifactId>mp3</artifactId>
+    <artifactId>mp4</artifactId>
     <version>1.0</version>
 
     <properties>
@@ -88,7 +88,7 @@
                         <configuration>
                             <archive>
                                 <manifest>
-                                    <mainClass>cs425.mp3.App</mainClass>
+                                    <mainClass>cs425.mp4.App</mainClass>
                                 </manifest>
                             </archive>
                             <descriptorRefs>
