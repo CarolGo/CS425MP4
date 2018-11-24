@@ -1,4 +1,4 @@
-# cs425mp3
+# CS425MP4
 
 ## Develop environment
 
@@ -31,7 +31,7 @@ You need to equip and configure environment:
 
 4. Run the code:
 ```bash
-java -jar mp3-1.0-jar-with-dependencies.jar
+java -jar mp4-1.0-jar-with-dependencies.jar
 ```
 
 ## Scripts
