@@ -1,4 +1,4 @@
-package cs425.mp3;
+package cs425;
 
 /**
  * Some configuration
@@ -16,8 +16,15 @@ public final class Config {
      * TCP port for file operations
      */
     public static final int TCP_PORT = 18081;
-
     public static final int TCP_FILE_TRANS_PORT = 18082;
+
+    /**
+     * TCP port for crane tasks
+     */
+    public static final int TCP_TASK_ASSIGNMENT_PORT = 8081;
+    public static final int TCP_TUPLE_TRANS_BASE_PORT = 8082;
+    public static final int TCP_TUPLE_ACK_BASE_PORT = 9082;
+
 
     public static final int NETWORK_BUFFER_SIZE = 1350;
 

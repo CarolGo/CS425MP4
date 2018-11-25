@@ -1,4 +1,4 @@
-import cs425.mp3.Config;
+import cs425.Config;
 import cs425.mp3.FileCommand;
 import cs425.mp3.FileOperation;
 import org.junit.jupiter.api.Disabled;

@@ -1,5 +1,8 @@
-package cs425.mp3;
+package cs425;
 
+import cs425.crane.node.CraneNode;
+import cs425.mp3.FileOperation;
+import cs425.mp3.Node;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -19,7 +22,7 @@ public class App {
         String cmd;
         Node node = new Node();
         FileOperation fOper = new FileOperation(node);
-        //TODO: Remove when FSO good
+        CraneNode cNode = new CraneNode(fOper);
         node.join();
         while (true) {
             logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions,printAll,crane): ");
@@ -66,8 +69,8 @@ public class App {
                             break;
                         case "printAll":
                             fOper.printAll();
-                        case "crane":   //crane code.jar sourcefilename
-
+                        case "crane":   //crane code.jar sdfsfilename
+                            //Todo: add crane app
                             break;
                         default:
                             logger.warn("Use input invalid");

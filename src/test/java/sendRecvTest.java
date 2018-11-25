@@ -1,4 +1,4 @@
-import cs425.mp3.Config;
+import cs425.Config;
 
 import java.io.*;
 import java.net.ServerSocket;
