@@ -22,7 +22,7 @@ public class App {
         //TODO: Remove when FSO good
         node.join();
         while (true) {
-            logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions,printAll): ");
+            logger.info("Enter your command (id,list,join,leave,printLeader,put,get,delete,ls,store,get-versions,printAll,crane): ");
             cmd = input.nextLine();
             logger.trace("User input: {}", cmd);
             switch (cmd) {
@@ -66,6 +66,8 @@ public class App {
                             break;
                         case "printAll":
                             fOper.printAll();
+                        case "crane":   //crane code.jar sourcefilename
+
                             break;
                         default:
                             logger.warn("Use input invalid");
