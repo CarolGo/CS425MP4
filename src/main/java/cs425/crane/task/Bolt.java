@@ -1,7 +1,10 @@
 package cs425.crane.task;
 
-import java.io.Serializable;
 import cs425.crane.message.Tuple;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.Serializable;
 
 public interface Bolt extends Serializable {
     /**
@@ -11,13 +14,20 @@ public interface Bolt extends Serializable {
 
     /**
      * Called by crane to process a new tuple.
+     *
      * @param tuple
      */
     void execute(Tuple tuple);
 
     /**
-     *  called when a Bolt task is going to be shotdown.
+     * called when a Bolt task is going to be shotdown.
      */
     void cleanUp();
+
+    static Bolt parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        Object o = in.readObject();
+        if (o instanceof Bolt) return (Bolt) o;
+        return null;
+    }
 
 }
