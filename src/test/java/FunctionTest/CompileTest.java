@@ -11,11 +11,9 @@ import java.util.function.Function;
 
 public class CompileTest {
 
-    private static Mp4Function parseClass(File dirRoot, String classFileName) throws IOException {
-        File f = new File(dirRoot, classFileName);
-        try (URLClassLoader cl = URLClassLoader.newInstance(new URL[]{f.toURI().toURL()})) {
-            classFileName = classFileName.split("\\.")[0];
-            return (Mp4Function) Class.forName(classFileName, true, cl).newInstance();
+    private static Mp4Function parseClass(File classFilePath, String classPath) throws IOException {
+        try (URLClassLoader cl = URLClassLoader.newInstance(new URL[]{classFilePath.toURI().toURL()})) {
+            return (Mp4Function) Class.forName(classPath, true, cl).newInstance();
         } catch (ReflectiveOperationException e) {
             // Class not found or can not new
             return null;
@@ -23,9 +21,9 @@ public class CompileTest {
     }
 
     public static void main(String... args) throws Exception {
-        File folder = new File("target\\test-classes");
+        File folder = new File("target\\test-classes", "FunctionTest.UniversalFunction.class");
 
-        Mp4Function m = parseClass(folder, "UniversalFunction.class");
+        Mp4Function m = parseClass(folder, "FunctionTest.UniversalFunction");
         if (m == null) {
             System.err.println("Class bad defined");
             return;
