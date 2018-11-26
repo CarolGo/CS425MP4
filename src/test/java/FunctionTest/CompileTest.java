@@ -1,34 +1,47 @@
 package FunctionTest;
 
-import javax.tools.JavaCompiler;
-import javax.tools.ToolProvider;
+import cs425.crane.function.Mp4Function;
+
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
+import java.util.List;
+import java.util.function.Function;
 
 public class CompileTest {
 
+    private static Mp4Function parseClass(File dirRoot, String classFileName) throws IOException {
+        File f = new File(dirRoot, classFileName);
+        try (URLClassLoader cl = URLClassLoader.newInstance(new URL[]{f.toURI().toURL()})) {
+            classFileName = classFileName.split("\\.")[0];
+            return (Mp4Function) Class.forName(classFileName, true, cl).newInstance();
+        } catch (ReflectiveOperationException e) {
+            // Class not found or can not new
+            return null;
+        }
+    }
+
+    private static String getClassPackage(String errorMsg) {
+        int startIndex = errorMsg.lastIndexOf(" ") + 1;
+        int endIndex = errorMsg.length() - 1;
+
+        String classPackage = errorMsg.substring(startIndex, endIndex);
+        return classPackage.replace('/', '.');
+    }
+
     public static void main(String... args) throws Exception {
-        // Prepare source somehow.
-        String source = "package mp4; public class Test { static { System.out.println(\"hello\"); } public Test() { System.out.println(\"world\"); } }";
+        File folder = new File("target\\test-classes");
 
-        // Save source in .java file.
-        File root = new File("target");
-        File sourceFile = new File(root, "mp4/Test.java");
-        sourceFile.getParentFile().mkdirs();
-        Files.write(sourceFile.toPath(), source.getBytes(StandardCharsets.UTF_8));
-
-        // Compile source file.
-        JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
-        compiler.run(null, null, null, sourceFile.getPath());
-
-        // Load and instantiate compiled class.
-        URLClassLoader classLoader = URLClassLoader.newInstance(new URL[]{root.toURI().toURL()});
-        Class<?> cls = Class.forName("mp4.Test", true, classLoader); // Should print "hello".
-        Object instance = cls.newInstance(); // Should print "world".
-        System.out.println(instance); // Should print "test.Test@hashcode".
+        Mp4Function m = parseClass(folder, "CompileClassTest.class");
+        if (m == null) {
+            System.err.println("Class bad defined");
+            return;
+        }
+        //TODO: Change <Integer, List<Integer>> to a wrapper object
+        Function<Integer, List<Integer>> s = m.mp4Task();
+        List<Integer> rndList = s.apply(1000);
+        System.out.println(String.format("Total lenth: %d\n11th element: %d", rndList.size(), rndList.get(11)));
     }
 
 }
