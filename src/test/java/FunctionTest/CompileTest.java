@@ -4,6 +4,7 @@ import cs425.crane.function.Mp4Function;
 
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
 import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.List;
@@ -13,9 +14,12 @@ public class CompileTest {
 
     private static Mp4Function parseClass(File classFilePath, String classPath) throws IOException {
         try (URLClassLoader cl = URLClassLoader.newInstance(new URL[]{classFilePath.toURI().toURL()})) {
-            return (Mp4Function) Class.forName(classPath, true, cl).newInstance();
+            Class<?> rawInput = Class.forName(classPath, true, cl);
+            Class<? extends Mp4Function> newClass = rawInput.asSubclass(Mp4Function.class);
+            Constructor<? extends Mp4Function> constructor = newClass.getConstructor();
+            return constructor.newInstance();
         } catch (ReflectiveOperationException e) {
-            // Class not found or can not new
+            // Class not found or can not new etc.
             return null;
         }
     }
