@@ -5,7 +5,12 @@ import java.util.List;
 import java.util.Random;
 import java.util.function.Function;
 
-public class CompileClassTest implements Mp4Function {
+/**
+ * A demo function for MP4 function processing module
+ * Must NOT have a package name
+ * Must implement Mp4Function interface
+ */
+public class UniversalFunction implements Mp4Function {
 
     private static final Random r = new Random();
 

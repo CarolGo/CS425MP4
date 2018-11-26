@@ -22,18 +22,10 @@ public class CompileTest {
         }
     }
 
-    private static String getClassPackage(String errorMsg) {
-        int startIndex = errorMsg.lastIndexOf(" ") + 1;
-        int endIndex = errorMsg.length() - 1;
-
-        String classPackage = errorMsg.substring(startIndex, endIndex);
-        return classPackage.replace('/', '.');
-    }
-
     public static void main(String... args) throws Exception {
         File folder = new File("target\\test-classes");
 
-        Mp4Function m = parseClass(folder, "CompileClassTest.class");
+        Mp4Function m = parseClass(folder, "UniversalFunction.class");
         if (m == null) {
             System.err.println("Class bad defined");
             return;
