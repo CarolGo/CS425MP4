@@ -88,7 +88,7 @@
                         <configuration>
                             <archive>
                                 <manifest>
-                                    <mainClass>cs425.mp4.App</mainClass>
+                                    <mainClass>cs425.App</mainClass>
                                 </manifest>
                             </archive>
                             <descriptorRefs>

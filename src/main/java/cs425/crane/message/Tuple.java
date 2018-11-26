@@ -1,5 +1,7 @@
 package cs425.crane.message;
 
+import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.io.Serializable;
@@ -26,20 +28,17 @@ public class Tuple implements Serializable{
         }
     }
 
-    /**
-     * Get the data field of the Tuple
-     * @return
-     */
-
     public ArrayList<Object> getData() {
         return data;
     }
 
-    /**
-     * Get the id of the Tuple
-     * @return
-     */
     public UUID getId() {
         return id;
+    }
+
+    public static Tuple parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
+        Object o = in.readObject();
+        if (o instanceof Tuple) return (Tuple) o;
+        return null;
     }
 }

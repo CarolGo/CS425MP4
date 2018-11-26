@@ -1,10 +1,12 @@
-package cs425.mp3;
+package cs425;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
+import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
 import java.util.UUID;
@@ -65,6 +67,19 @@ public final class Util {
         osw.write(s);
         osw.close();
         return bos.toByteArray();
+    }
+
+    /**
+     * connection to host
+     */
+    public static Socket connectToServer(String host, int port) throws IOException {
+        Socket s = new Socket();
+        // Potential higher performance with SO_KA
+        s.setKeepAlive(true);
+        s.connect(new InetSocketAddress(host, port), Config.CONNECT_TIMEOUT_SECOND * 1000);
+        s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
+        // logger.info("Connected to server {}", host);
+        return s;
     }
 
 }

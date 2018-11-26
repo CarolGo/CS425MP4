@@ -1,12 +1,12 @@
 package cs425.mp3;
 
 import cs425.Config;
+import cs425.Util;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.*;
 import java.net.InetAddress;
-import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.time.LocalDateTime;
@@ -24,7 +24,7 @@ public final class FileOperation {
     private final AtomicBoolean hasReceivedSuccess = new AtomicBoolean(false);
 
     // Runtime variable
-    private final Node node;
+    public final Node node;
     private final ExecutorService dataBackupThread;
     private final ScheduledExecutorService metaBackupThread;
     private final ExecutorService processThread;
@@ -86,7 +86,7 @@ public final class FileOperation {
                         copy.forEach((host, timestamp) -> {
                             FileCommand f = new FileCommand("crash", this.node.getLeader(), host, -1);
                             try {
-                                Socket s = connectToServer(this.node.getLeader(), Config.TCP_PORT);
+                                Socket s = Util.connectToServer(this.node.getLeader(), Config.TCP_PORT);
                                 FileCommandResult result = sendFileCommandViaSocket(f, s);
                                 logger.info("2");
                                 if (result.isHasError()) {
@@ -120,7 +120,7 @@ public final class FileOperation {
             hosts.remove(this.node.getHostName());
             for (int i = 0; i < 3; i++) {
                 try {
-                    Socket backupSocket = connectToServer(hosts.get(i), Config.TCP_PORT);
+                    Socket backupSocket = Util.connectToServer(hosts.get(i), Config.TCP_PORT);
                     FileCommand backupFileCommand = new FileCommand("requestBackup", hosts.get(i), "", 0);
                     backupFileCommand.setBackup(this.sdfsFileMap);
                     FileCommandResult res = sendFileCommandViaSocket(backupFileCommand, backupSocket);
@@ -167,7 +167,7 @@ public final class FileOperation {
             this.node.isLeaderChanged.set(false);
             for (String host : this.node.getMemberList().keySet()) {
                 try {
-                    Socket s = connectToServer(host, Config.TCP_PORT);
+                    Socket s = Util.connectToServer(host, Config.TCP_PORT);
                     FileCommandResult res = sendFileCommandViaSocket(new FileCommand("backup", host, "", 0), s);
                     if (res.isHasError()) {
                         logger.info("Fail to ask <{}> for backup", host);
@@ -214,7 +214,7 @@ public final class FileOperation {
                     if (host.equals(this.node.getLeader())) {
                         FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, fo.getVersion());
                         try {
-                            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
+                            Socket socket = Util.connectToServer(targetNode, Config.TCP_PORT);
                             FileCommandResult result = sendFileCommandViaSocket(fc, socket);
                             if (result.isHasError()) {
                                 logger.error("Has err");
@@ -228,7 +228,7 @@ public final class FileOperation {
                         }
                     } else {
                         try {
-                            Socket socket = connectToServer(host, Config.TCP_PORT);
+                            Socket socket = Util.connectToServer(host, Config.TCP_PORT);
                             FileCommand f = new FileCommand("getReplica", targetNode, fileName, fo.getVersion());
                             FileCommandResult res = sendFileCommandViaSocket(f, socket);
                             if (res.isHasError()) {
@@ -287,7 +287,7 @@ public final class FileOperation {
             FileCommand cmd = new FileCommand("put", leader, sdfsFileName, newVersion);
             FileCommandResult res = null;
             try {
-                Socket s = connectToServer(leader, Config.TCP_PORT);
+                Socket s = Util.connectToServer(leader, Config.TCP_PORT);
                 res = sendFileCommandViaSocket(cmd, s);
                 if (res.isHasError()) {
                     logger.info("master put error");
@@ -310,7 +310,7 @@ public final class FileOperation {
                 //TODO: Multi-thread send?
                 Socket replicaSocket;
                 try {
-                    replicaSocket = connectToServer(host, Config.TCP_FILE_TRANS_PORT);
+                    replicaSocket = Util.connectToServer(host, Config.TCP_FILE_TRANS_PORT);
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
                     sendFileViaSocket(toSend, replicaSocket, sdfsFileName, newVersion, "put", "");
                 } catch (IOException e) {
@@ -347,7 +347,7 @@ public final class FileOperation {
             }
             for (String host : queryResault.getReplicaNodes()) {
                 try {
-                    Socket getSocket = connectToServer(host, Config.TCP_PORT);
+                    Socket getSocket = Util.connectToServer(host, Config.TCP_PORT);
                     FileCommandResult getResult = sendFileCommandViaSocket(new FileCommand("get", localFileName, sdfsFileName, 0), getSocket);
                     if (getResult.isHasError()) {
                         logger.info("get error with <{}>", host);
@@ -410,7 +410,7 @@ public final class FileOperation {
                             if (host.equals(this.node.getHostName())) {
                                 this.localFileMap.remove(sdfsFileName);
                             } else {
-                                Socket deleteSocket = connectToServer(host, Config.TCP_PORT);
+                                Socket deleteSocket = Util.connectToServer(host, Config.TCP_PORT);
                                 FileCommandResult res = sendFileCommandViaSocket(new FileCommand("delete", host, sdfsFileName, 0), deleteSocket);
                                 if (res.isHasError()) {
                                     logger.debug("Fail to ask node <{}> to delete", host);
@@ -425,7 +425,7 @@ public final class FileOperation {
             }
         } else {   //member delete
             try {
-                Socket deleteSocket = connectToServer(leader, Config.TCP_PORT);
+                Socket deleteSocket = Util.connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult result = sendFileCommandViaSocket(new FileCommand("delete", leader, sdfsFileName, 0), deleteSocket);
                 if (result.isHasError()) {
                     logger.debug("Master delete fail");
@@ -461,7 +461,7 @@ public final class FileOperation {
             logger.error("Leader empty, can not list file in SDFS");
         } else {
             try {
-                Socket s = connectToServer(leader, Config.TCP_PORT);
+                Socket s = Util.connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult result = sendFileCommandViaSocket(new FileCommand("backup", leader, "", 0), s);
                 if (result.isHasError()) {
                     logger.debug("error when requesting backup");
@@ -512,7 +512,7 @@ public final class FileOperation {
             for (String node : potentialNodes) {
                 logger.info("Getting version <{}> for <{}> from <{}>", targetVer, sdfsFileName, node);
                 try {
-                    Socket s = connectToServer(node, Config.TCP_PORT);
+                    Socket s = Util.connectToServer(node, Config.TCP_PORT);
                     // Send version i of x file to me
                     FileCommand f = new FileCommand("requestVersion", localFileName, sdfsFileName, targetVer);
                     FileCommandResult fcr = sendFileCommandViaSocket(f, s);
@@ -589,19 +589,6 @@ public final class FileOperation {
                 bufferedReadWrite(is, os, 8192);
             }
         }
-    }
-
-    /**
-     * connection to host
-     */
-    private Socket connectToServer(String host, int port) throws IOException {
-        Socket s = new Socket();
-        // Potential higher performance with SO_KA
-        s.setKeepAlive(true);
-        s.connect(new InetSocketAddress(host, port), Config.CONNECT_TIMEOUT_SECOND * 1000);
-        s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
-        // logger.info("Connected to server {}", host);
-        return s;
     }
 
     /**
@@ -686,7 +673,7 @@ public final class FileOperation {
         if (!leader.isEmpty()) {
             FileCommand cmd = new FileCommand("query", leader, sdfsFileName, 0);
             try {
-                Socket s = connectToServer(leader, Config.TCP_PORT);
+                Socket s = Util.connectToServer(leader, Config.TCP_PORT);
                 FileCommandResult res = sendFileCommandViaSocket(cmd, s);
                 if (!res.isHasError()) {
                     return res;
@@ -856,7 +843,7 @@ public final class FileOperation {
         // Send this file back
         FileObject file = oFo.get();
         try {
-            Socket transSocket = connectToServer(targetHostname, Config.TCP_FILE_TRANS_PORT);
+            Socket transSocket = Util.connectToServer(targetHostname, Config.TCP_FILE_TRANS_PORT);
             File toSend = new File(Config.STORAGE_PATH, file.getUUID());
             sendFileViaSocket(toSend, transSocket, whichFile, targetV, "version", saveToName);
             transSocket.close();
@@ -888,7 +875,7 @@ public final class FileOperation {
             if (fo.getVersion() == version) {
                 try {
                     // Send the requested file back to requester
-                    Socket socket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+                    Socket socket = Util.connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
                     File toSend = new File(Config.STORAGE_PATH, fo.getUUID());
                     sendFileViaSocket(toSend, socket, fileName, version, "put", "");
                     socket.close();
@@ -907,7 +894,7 @@ public final class FileOperation {
         int version = cmd.getVersionNum();
         FileCommand fc = new FileCommand("requestReplica", targetNode, fileName, version);
         try {
-            Socket socket = connectToServer(targetNode, Config.TCP_PORT);
+            Socket socket = Util.connectToServer(targetNode, Config.TCP_PORT);
             FileCommandResult result = sendFileCommandViaSocket(fc, socket);
             if (result.isHasError()) {
                 logger.error("Has err");
@@ -949,7 +936,7 @@ public final class FileOperation {
                         this.localFileMap.remove(fileName);
                     } else {
                         try {
-                            Socket s = connectToServer(host, Config.TCP_PORT);
+                            Socket s = Util.connectToServer(host, Config.TCP_PORT);
                             FileCommandResult memberResult = sendFileCommandViaSocket(new FileCommand("delete", host, fileName, 0), s);
                             if (memberResult.isHasError()) {
                                 logger.debug("Fail to ask node <{}> to delete", host);
@@ -995,7 +982,7 @@ public final class FileOperation {
         result.setVersion(file.getVersion());
         sendFileCommandResultViaSocket(out, result);
         try {
-            Socket transSocket = connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
+            Socket transSocket = Util.connectToServer(requestHost, Config.TCP_FILE_TRANS_PORT);
             File toSend = new File(Config.STORAGE_PATH, file.getUUID());
             sendFileViaSocket(toSend, transSocket, sdfsFileName, result.getVersion(), "get", saveToName);
             transSocket.close();
