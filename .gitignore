@@ -1,4 +1,5 @@
 /mp3_fs_data
+/mp3_fs_get_data
 
 ### Java template
 # Compiled class file
@@ -93,3 +94,6 @@ dependency-reduced-pom.xml
 buildNumber.properties
 .mvn/timing.properties
 !.mvn/wrapper/maven-wrapper.jar
+
+### Special exclusion
+!/UniversalFunction.class

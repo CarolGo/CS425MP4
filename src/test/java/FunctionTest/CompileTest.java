@@ -17,7 +17,8 @@ public class CompileTest {
 
     @Test
     void loaderTest() throws Exception {
-        File folder = new File("target\\test-classes", "FunctionTest");
+        File folder = new File(".");
+        System.out.println("Search .class file in: " + folder.getAbsolutePath());
         Constructor<? extends Mp4Function> constructor =
                 FunctionLoader.loadClass(folder.getAbsolutePath(), "FunctionTest.UniversalFunction");
         assertNotNull(constructor);
@@ -29,7 +30,6 @@ public class CompileTest {
 
         int r = new Random().nextInt(5000);
         List<Integer> rndList = s.apply(r);
-
         assertEquals(r, rndList.size());
     }
 

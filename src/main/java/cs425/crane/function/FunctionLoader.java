@@ -12,23 +12,30 @@ import java.net.URLClassLoader;
 public class FunctionLoader {
     private static final Logger logger = LoggerFactory.getLogger(FunctionLoader.class);
 
+    /**
+     * Find and load the first found class file
+     *
+     * @param directory Path of the class file (or folders containing it)
+     * @param classpath CP of the class
+     * @return A Constructor of Mp4Function
+     */
     public static Constructor<? extends Mp4Function> loadClass(String directory, String classpath) {
-        File jarDir = new File(directory);
-        Constructor<? extends Mp4Function> c = null;
-        if (!jarDir.isDirectory()) {
+        File classDir = new File(directory);
+        if (!classDir.isDirectory()) {
             try {
-                c = extractOneClass(jarDir, classpath);
+                // Found matching class, return
+                return extractOneClass(classDir, classpath);
             } catch (IOException e) {
                 logger.error("IO error when loading class", e);
             } catch (NoSuchMethodException | ClassNotFoundException e) {
                 logger.error("Class not loadable", e);
             }
         } else {
-            File[] tmp = jarDir.listFiles();
+            File[] tmp = classDir.listFiles();
             if (tmp != null) {
                 for (File jar : tmp) {
                     try {
-                        c = extractOneClass(jar, classpath);
+                        return extractOneClass(jar, classpath);
                     } catch (IOException e) {
                         logger.error("IO error when loading class", e);
                     } catch (ClassNotFoundException e) {
@@ -39,10 +46,11 @@ public class FunctionLoader {
                     }
                 }
             } else {
-                logger.error("Mysterious error causing <{}> fail to list files.", jarDir.getAbsolutePath());
+                logger.error("Mysterious error causing <{}> fail to list files.", classDir.getAbsolutePath());
             }
         }
-        return c;
+        // All failed, return null
+        return null;
     }
 
     private static Constructor<? extends Mp4Function> extractOneClass(File file, String cp) throws NoSuchMethodException, ClassNotFoundException, IOException {

@@ -11,6 +11,7 @@ import java.util.function.Function;
  * A demo function for MP4 function processing module
  * Must NOT have a package name
  * Must implement Mp4Function interface
+ * A pre-compiled version (MD5: 41a1eeaa9a00fddbefc130b5a808df83) is in the root of project directory for testing
  */
 public class UniversalFunction implements Mp4Function {
 
