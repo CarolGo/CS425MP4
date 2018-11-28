@@ -10,8 +10,3 @@ scp -i ~/dlvm ./target/mp4-1.0-jar-with-dependencies.jar fangwei2@fa18-cs425-g17
 scp -i ~/dlvm ./target/mp4-1.0-jar-with-dependencies.jar fangwei2@fa18-cs425-g17-08.cs.illinois.edu:~
 scp -i ~/dlvm ./target/mp4-1.0-jar-with-dependencies.jar fangwei2@fa18-cs425-g17-09.cs.illinois.edu:~
 scp -i ~/dlvm ./target/mp4-1.0-jar-with-dependencies.jar fangwei2@fa18-cs425-g17-10.cs.illinois.edu:~
-
-
-
-
-
