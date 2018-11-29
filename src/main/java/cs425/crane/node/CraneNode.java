@@ -3,6 +3,7 @@ package cs425.crane.node;
 import cs425.Util;
 import cs425.Config;
 import cs425.crane.message.*;
+import cs425.crane.task.TaskExecutor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import cs425.mp3.FileOperation;
@@ -11,13 +12,11 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.io.*;
-import java.util.Random;
+
 
 /**
  * crane node
@@ -38,6 +37,8 @@ public class CraneNode {
     private int nextPortToAssign = Config.TCP_TUPLE_TRANS_BASE_PORT;
     private HashMap<String, String> taskLocationMap;
     private HashMap<String, String> taskTypeMap;
+    private String[] hosts;
+    private int hostIndexToAssignTask;
 
 
     /**
@@ -86,6 +87,8 @@ public class CraneNode {
         if (this.fNode.node.getLeader().equals(this.fNode.node.getHostName())) {
             //first get the topofile to local machine from SDFS
             this.fNode.get(topofile, topofile);
+            this.hosts = this.fNode.node.getNodesArray();
+            this.hostIndexToAssignTask = 0;
             try (BufferedReader br = new BufferedReader(new FileReader(Config.GET_PATH + "/" + topofile))) {
                 String line;
                 //parse the file line by line - taskType # src # taskName # dest # object # numOfThreads
@@ -193,6 +196,7 @@ public class CraneNode {
             ServerSocket destServerSocket;
             AckMessage ack = new AckMessage(UUID.randomUUID(), true);
             sendAckMessageViaStream(out, ack);
+            TaskExecutor taskExecutor = null;
             switch (task.getType()) {
                 case "spout":
                     //listen for dest node connection
@@ -200,14 +204,19 @@ public class CraneNode {
                         try {
                             destServerSocket = new ServerSocket(thisPort);
                             if (destServerSocket.isClosed()) continue;
-                            logger.info("<{}> listen at port <{}>", task.getName(),thisPort);
+                            logger.info("<{}> listen at port <{}>", task.getName(), thisPort);
                             destSocket = destServerSocket.accept();
                             logger.info("Stream connection from <{}> to <{}> set up", task.getDest(), task.getName());
-                            destSocket.close();
                             break;
                         } catch (IOException e) {
                             logger.error("<{}> at <{}> failed to listen on port <{}>", task.getName(), this.serverHostname, thisPort, e);
                         }
+                    }
+                    sendAckMessageViaStream(out, ack);
+                    if (destSocket != null){
+                        taskExecutor = new TaskExecutor(null, destSocket, task.getType(), task.getName());
+                    } else{
+                        logger.error("Socket connection error");
                     }
                     break;
                 case "bolt":
@@ -216,23 +225,25 @@ public class CraneNode {
                     sourceHost = sourceHostPlusPort[0];
                     sourcePort = Integer.parseInt(sourceHostPlusPort[1]);
                     try {
-                        logger.info("<{}> trying to connect to <{}> at port <{}>", task.getName(),sourceHost, sourcePort);
+                        logger.info("<{}> trying to connect to <{}> at port <{}>", task.getName(), sourceHost, sourcePort);
                         sourceSocket = Util.connectToServer(sourceHost, sourcePort);
                         //listen for dest node connection
-                        logger.info("bolt:here1");
                         while (true) {
                             try {
                                 destServerSocket = new ServerSocket(thisPort);
                                 if (destServerSocket.isClosed()) continue;
                                 destSocket = destServerSocket.accept();
                                 logger.info("Stream connection from <{}> to <{}> set up", task.getDest(), task.getName());
-                                ack = new AckMessage(UUID.randomUUID(), true);
-                                sendAckMessageViaStream(out, ack);
-                                destSocket.close();
                                 break;
                             } catch (IOException e) {
                                 logger.error("<{}> at <{}> failed to listen on port <{}>", task.getName(), this.serverHostname, thisPort, e);
                             }
+                        }
+                        sendAckMessageViaStream(out, ack);
+                        if (destSocket != null && sourceSocket != null){
+                            taskExecutor = new TaskExecutor(sourceSocket, destSocket, task.getType(), task.getName());
+                        } else{
+                            logger.error("Socket connection error");
                         }
                     } catch (IOException e) {
                         logger.error("Worker <{}> failed to connected to <{}>", task.getName(), task.getSrc(), e);
@@ -244,30 +255,27 @@ public class CraneNode {
                     sourceHost = sourceHostPlusPort[0];
                     sourcePort = Integer.parseInt(sourceHostPlusPort[1]);
                     try {
-                        logger.info("<{}> trying to connect to <{}> at port <{}>", task.getName(),sourceHost, sourcePort);
+                        logger.info("<{}> trying to connect to <{}> at port <{}>", task.getName(), sourceHost, sourcePort);
                         sourceSocket = Util.connectToServer(sourceHost, sourcePort);
-                        //listen for dest node connection
-                        while (true) {
-                            try {
-                                logger.info("blocked here");
-                                destServerSocket = new ServerSocket(thisPort);
-                                if (destServerSocket.isClosed()) continue;
-                                destSocket = destServerSocket.accept();
-                                logger.info("Stream connection from <{}> to <{}> set up", task.getDest(), task.getName());
-                                ack = new AckMessage(UUID.randomUUID(), true);
-                                sendAckMessageViaStream(out, ack);
-                                destSocket.close();
-                                break;
-                            } catch (IOException e) {
-                                logger.error("<{}> at <{}> failed to listen on port <{}>", task.getName(), this.serverHostname, thisPort, e);
-                            }
+                        sendAckMessageViaStream(out, ack);
+                        if (sourceSocket != null){
+                            taskExecutor = new TaskExecutor(sourceSocket, null, task.getType(), task.getName());
+                        } else{
+                            logger.error("Socket connection error");
                         }
+                        break;
                     } catch (IOException e) {
                         logger.error("Worker <{}> failed to connected to <{}>", task.getName(), task.getSrc(), e);
                     }
                     break;
                 default:
                     logger.error("Unknown task type received: <{}>", task.getType());
+                    return;
+            }
+            if (taskExecutor != null) {
+                logger.info("<{}> starts to process stream", task.getName());
+                taskExecutor.prepare();
+                taskExecutor.execute();
             }
         };
     }
@@ -326,46 +334,45 @@ public class CraneNode {
      * @param dest         For sink it is the file name to write the result, for bolt and spout it is node socket address to pass the processed stream.
      * @param object       task source object name in the SDFS
      * @param numOfThreads number of threads requested for this task
+     *                     Todo:add multiple thread feature
      */
     private void assignTask(String taskType, String src, String taskName, String dest, String object, int numOfThreads) throws IOException {
         for (int i = 0; i < numOfThreads; i++) {
             //pick random node to assign the task
-            Set<String> hosts = this.fNode.node.getMemberList().keySet();
-            int randomIndex = new Random().nextInt(hosts.size());
-            int j = 0;
-            for (String host : hosts) {
-                if (j == randomIndex) {
-                    TaskMessage msg;
-                    //for simplicity just let each task listened on a distinct port
-                    //Todo:add multiple thread feature
-                    String hostPlusPort = host + "+" + Integer.toString(this.nextPortToAssign);
-                    this.taskTypeMap.put(taskName, taskType);
-                    logger.info("Task <{}> assigned to <{}>", taskName, hostPlusPort);
-                    switch (taskType) {
-                        case "spout":
-                            this.taskLocationMap.put(taskName,hostPlusPort);
-                            msg = new TaskMessage(taskType, src, taskName, dest, object, this.nextPortToAssign);
-                            break;
-                        case "bolt":
-                            this.taskLocationMap.put(taskName, hostPlusPort);
-                            msg = new TaskMessage(taskType, this.taskLocationMap.get(src), taskName, dest, object, this.nextPortToAssign);
-                            break;
-                        case "sink":
-                            this.taskLocationMap.put(taskName, hostPlusPort);
-                            msg = new TaskMessage(taskType, this.taskLocationMap.get(src), taskName, dest, object, this.nextPortToAssign);
-                            break;
-                        default:
-                            logger.error("Unknown task type to assign", taskType);
-                            return;
-                    }
-                    AckMessage res = sendTaskMessageViaSocket(Util.connectToServer(host, Config.TCP_TASK_ASSIGNMENT_PORT), msg);
-                    if (!res.isFinished()) {
-                        logger.error("Failed to assign task to node: <{}>", host);
-                    }
-                }
-                j++;
+            String host = this.hosts[this.hostIndexToAssignTask];
+            //for efficiency, do not let master assign the task to itself
+            while (host.equals(this.serverHostname)) {
+                this.hostIndexToAssignTask += 1;
+                host = this.hosts[this.hostIndexToAssignTask];
+            }
+            TaskMessage msg;
+            //for simplicity just let each task listen on a distinct port
+            String hostPlusPort = host + "+" + Integer.toString(this.nextPortToAssign);
+            this.taskTypeMap.put(taskName, taskType);
+            logger.info("Task <{}> assigned to <{}>", taskName, hostPlusPort);
+            switch (taskType) {
+                case "spout":
+                    this.taskLocationMap.put(taskName, hostPlusPort);
+                    msg = new TaskMessage(taskType, src, taskName, dest, object, this.nextPortToAssign);
+                    break;
+                case "bolt":
+                    this.taskLocationMap.put(taskName, hostPlusPort);
+                    msg = new TaskMessage(taskType, this.taskLocationMap.get(src), taskName, dest, object, this.nextPortToAssign);
+                    break;
+                case "sink":
+                    this.taskLocationMap.put(taskName, hostPlusPort);
+                    msg = new TaskMessage(taskType, this.taskLocationMap.get(src), taskName, dest, object, this.nextPortToAssign);
+                    break;
+                default:
+                    logger.error("Unknown task type to assign", taskType);
+                    return;
+            }
+            AckMessage res = sendTaskMessageViaSocket(Util.connectToServer(host, Config.TCP_TASK_ASSIGNMENT_PORT), msg);
+            if (!res.isFinished()) {
+                logger.error("Failed to assign task to node: <{}>", host);
             }
             this.nextPortToAssign += 1;
+            this.hostIndexToAssignTask += 1;
         }
 
     }
