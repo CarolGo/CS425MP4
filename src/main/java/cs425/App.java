@@ -12,9 +12,7 @@ import java.util.Scanner;
 
 
 public class App {
-
     private static final Logger logger = LoggerFactory.getLogger(App.class);
-
     public static void main(String... args) throws Exception {
         initEnv();
 
@@ -69,8 +67,9 @@ public class App {
                             break;
                         case "printAll":
                             fOper.printAll();
-                        case "crane":   //crane code.jar sdfsfilename
-                            //Todo: add crane app
+                            break;
+                        case "crane":   //crane topofile
+                            cNode.execute(arguments[1]);
                             break;
                         default:
                             logger.warn("Use input invalid");

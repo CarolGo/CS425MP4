@@ -23,7 +23,7 @@ public final class Config {
      */
     public static final int TCP_TASK_ASSIGNMENT_PORT = 8081;
     public static final int TCP_TUPLE_TRANS_BASE_PORT = 8082;
-    public static final int TCP_TUPLE_ACK_BASE_PORT = 9082;
+    public static final int TCP_TUPLE_ACK_PORT = 9082;
 
 
     public static final int NETWORK_BUFFER_SIZE = 1350;
