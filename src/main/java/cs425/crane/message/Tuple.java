@@ -2,6 +2,7 @@ package cs425.crane.message;
 
 import java.io.IOException;
 import java.io.ObjectInputStream;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.util.ArrayList;
 import java.io.Serializable;
@@ -14,6 +15,7 @@ public class Tuple implements Serializable{
 
     UUID id;
     ArrayList<Object> data = new ArrayList<>();
+    private LocalDateTime timestamp = LocalDateTime.now();
 
     /**
      * Initialize the Tuple with a UUID and data values
@@ -34,6 +36,14 @@ public class Tuple implements Serializable{
 
     public UUID getId() {
         return id;
+    }
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
     }
 
     public static Tuple parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {

@@ -1,6 +1,7 @@
 package cs425.crane.message;
 
 import java.io.Serializable;
+import java.time.LocalDateTime;
 import java.util.UUID;
 import java.io.ObjectInputStream;
 import java.io.IOException;
@@ -12,6 +13,7 @@ import java.io.IOException;
 public class AckMessage implements Serializable {
     private final UUID id;
     private final boolean isFinished;
+    private LocalDateTime timestamp = LocalDateTime.now();
 
     /**
      * initialize the AckMessage.
@@ -29,6 +31,15 @@ public class AckMessage implements Serializable {
 
     public boolean isFinished() {
         return isFinished;
+    }
+
+
+    public LocalDateTime getTimestamp() {
+        return timestamp;
+    }
+
+    public void setTimestamp(LocalDateTime timestamp) {
+        this.timestamp = timestamp;
     }
 
     public static AckMessage parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {

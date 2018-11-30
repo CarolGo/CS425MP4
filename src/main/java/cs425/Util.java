@@ -9,6 +9,8 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -80,6 +82,12 @@ public final class Util {
         s.setSoTimeout(Config.RW_TIMEOUT_SECOND * 1000);
         // logger.info("Connected to server {}", host);
         return s;
+    }
+
+    public static long localDateTimeToSecond(LocalDateTime time){
+        ZoneId zoneId = ZoneId.systemDefault();
+        long epoch = time.atZone(zoneId).toEpochSecond();
+        return epoch;
     }
 
 }

@@ -6,7 +6,7 @@ import java.util.function.Function;
 public interface Mp4Function {
 
     /**
-     * An interface for custom function in MP3
+     * An interface for custom function in MP4
      *
      * @return A universal function
      */
