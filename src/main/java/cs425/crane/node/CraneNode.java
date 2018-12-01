@@ -20,6 +20,8 @@ import java.io.*;
 
 /**
  * crane node
+ * For failure recovery, if worker node failed, just restart the whole job. If master failed, no need
+ * to restart. The new elected master just read all the job information from the SDFS.
  */
 public class CraneNode {
     private final Logger logger = LoggerFactory.getLogger(CraneNode.class);
@@ -120,6 +122,8 @@ public class CraneNode {
             } catch (Exception e) {
                 logger.error("Failed to open file", e);
             }
+            //master backup
+            this.masterBackup();
         } else { //ask master to assign the tasks
             try {
                 TaskMessage msg = new TaskMessage("assignment", topofile, "", "", "", 0);
@@ -334,7 +338,7 @@ public class CraneNode {
      * @param dest         For sink it is the file name to write the result, for bolt and spout it is node socket address to pass the processed stream.
      * @param object       task source object name in the SDFS
      * @param numOfThreads number of threads requested for this task
-     *                     Todo:add multiple thread feature
+     *                     Todo:add multiple-thread feature
      */
     private void assignTask(String taskType, String src, String taskName, String dest, String object, int numOfThreads) throws IOException {
         for (int i = 0; i < numOfThreads; i++) {
@@ -374,7 +378,38 @@ public class CraneNode {
             this.nextPortToAssign += 1;
             this.hostIndexToAssignTask += 1;
         }
+    }
 
+    /**
+     * Master backup all the tasks information when all tasks start
+     */
+    private void masterBackup(){
+        JobBackup backup = new JobBackup(this.nextPortToAssign, this.taskLocationMap, this.taskTypeMap);
+        try {
+            backup.writeToSDFS(Config.JOB_BACKUP_NAME, this.fNode);
+        } catch (IOException e){
+            logger.error("Master failed to backup", e);
+        }
+    }
+
+    /**
+     * New master read all tasks information from ths SDFS
+     */
+    private void readBackup(){
+        try{
+            JobBackup backup = JobBackup.readFromSDFS(Config.JOB_BACKUP_NAME, this.fNode);
+            if(backup != null){
+                this.taskTypeMap = backup.getTaskTypeMap();
+                this.taskLocationMap = backup.getTaskLocationMap();
+                this.nextPortToAssign = backup.getNextPortToAssign();
+            } else{
+                logger.error("Null backup");
+            }
+        } catch (IOException e){
+            logger.error("Failed to read <{}> from SDFS", Config.JOB_BACKUP_NAME, e);
+        } catch (ClassNotFoundException e){
+            logger.error("Backup malformed", e);
+        }
     }
 
 }

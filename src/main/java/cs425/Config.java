@@ -43,4 +43,8 @@ public final class Config {
     public static final long FILE_RECV_TIMEOUT_MILLSECOND = 120_000;
 
     public static final int BACKUP_PERIOD = 5;
+
+    public static final String JOB_BACKUP_NAME = "JobBackup";
+
+
 }

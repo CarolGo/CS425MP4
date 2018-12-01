@@ -15,6 +15,8 @@ import java.util.concurrent.*;
 
 /**
  * Class that execute a given Spout/Bolt/Sink job
+ * Anchored ack per tuple is finished. Since TA said that we can restart the entire job upon failure,
+ * anchor is really not used.
  */
 public class TaskExecutor {
     private final Logger logger = LoggerFactory.getLogger(TaskExecutor.class);
@@ -44,6 +46,7 @@ public class TaskExecutor {
     }
 
     private void initialAllThreads(){
+        //initial the ack listener thread
         this.ackHandler.submit(()->{
             Thread.currentThread().setName(this.taskName + ":ackHandler");
             try{
@@ -60,7 +63,7 @@ public class TaskExecutor {
                 logger.error("Failed to read ack message", e);
             }
         });
-
+        //initial the replay thread
         this.replayer.scheduleAtFixedRate(()->{
             Thread.currentThread().setName(this.taskName + ":replayer");
             if(!this.taskType.equals("sink") && !this.waitForAck.isEmpty()){
