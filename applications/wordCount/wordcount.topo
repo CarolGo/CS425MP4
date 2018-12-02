@@ -1,0 +1,3 @@
+spout # Toys_and_Games_5.json # spout1 # bolt1 # wordCount.ReadLineSpout # 1
+bolt # spout1 # bolt1 # sink1 # wordCount.SplitBolt # 1
+sink # bolt1 # sink1 # wordCount.result # wordCount.CountSink # 1

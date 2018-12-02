@@ -1,3 +1,0 @@
-spout # wordCountSource # spout1 # bolt1 # spout1Code # 1
-bolt # spout1 # bolt1 # sink1 # bolt1Code # 1
-sink # bolt1 # sink1 # wordCountResult # sink1Code # 1
