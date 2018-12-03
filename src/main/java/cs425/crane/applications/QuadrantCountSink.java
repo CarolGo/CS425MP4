@@ -1,42 +1,50 @@
-package cs425.crane.applications.wordCount;
+package cs425.crane.applications;
 
 import cs425.crane.message.Tuple;
 import cs425.crane.task.Sink;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.BufferedWriter;
-import java.io.FileWriter;
-import java.io.IOException;
+import java.io.*;
 import java.util.HashMap;
 import java.util.UUID;
 
-public class CountSink implements Sink {
+public class QuadrantCountSink implements Sink {
 
     private HashMap<String, Integer> wordFrequeny;
-    private final Logger logger = LoggerFactory.getLogger(CountSink .class);
+    private final Logger logger = LoggerFactory.getLogger(QuadrantCountSink.class);
     private int i;
 
     @Override
     public void prepare(){
         this.wordFrequeny = new HashMap<>();
+        this.wordFrequeny.put("First Quadrant", 0);
+        this.wordFrequeny.put("Second Quadrant", 0);
+        this.wordFrequeny.put("Third Quadrant", 0);
+        this.wordFrequeny.put("Forth Quadrant", 0);
+        this.wordFrequeny.put("Y", 0);
+        this.wordFrequeny.put("X", 0);
+        this.wordFrequeny.put("Origin", 0);
     }
 
     @Override
     public void process(Tuple tuple){
-        Integer freq = this.wordFrequeny.getOrDefault(tuple.getData().get(0).toString(), 0);
-        this.wordFrequeny.put(tuple.getData().get(0).toString(),freq+1);
-        if(i % 10000 == 0){
-            logger.info(Integer.toString(i));
-        }
         i ++;
+        this.wordFrequeny.put(tuple.getData().get(0).toString(),this.wordFrequeny.get(tuple.getData().get(0).toString()) + 1);
+        if (i % 50000 == 0){
+            logger.info("Sink result after <{}> Tuples received", Integer.toString(i));
+            this.wordFrequeny.forEach((word, num) -> {
+                String line = word + " : " + num.toString();
+                logger.info(line);
+            });
+        }
     }
 
     @Override
     public void cleanUp(){
         try{
             logger.info("Save result to local machine");
-            BufferedWriter bw = new BufferedWriter(new FileWriter("wordCount.result"));
+            BufferedWriter bw = new BufferedWriter(new FileWriter("quadrantCount.result"));
             this.wordFrequeny.forEach((word, freq) -> {
                 String line = word + " : " + freq.toString() + "\n";
                 try{
@@ -57,4 +65,5 @@ public class CountSink implements Sink {
 
     @Override
     public void fail(UUID id){}
+
 }

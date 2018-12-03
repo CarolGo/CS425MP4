@@ -4,6 +4,8 @@ import cs425.Util;
 import cs425.Config;
 import cs425.crane.message.*;
 import cs425.crane.task.TaskExecutor;
+import cs425.mp3.FileCommand;
+import cs425.mp3.FileCommandResult;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import cs425.mp3.FileOperation;
@@ -33,12 +35,16 @@ public class CraneNode {
     private final ExecutorService taskAssignmentListenerThread;
 
     //Variables for crane system control
-    private final ExecutorService processThread;
-    private final boolean isCraneRunning;
+    private ExecutorService listenerThread;
+    private ExecutorService workerThread;
+    private final ExecutorService failureHandlerThread;
+    private boolean isCraneRunning;
     private final String serverHostname;
     private int nextPortToAssign = Config.TCP_TUPLE_TRANS_BASE_PORT;
+    private Set<String> onProcessingJobs;
     private HashMap<String, String> taskLocationMap;
     private HashMap<String, String> taskTypeMap;
+    private Set<String> workingNodes;
     private String[] hosts;
     private int hostIndexToAssignTask;
 
@@ -52,12 +58,16 @@ public class CraneNode {
     public CraneNode(FileOperation fOper) throws IOException {
         this.fNode = fOper;
         this.serverHostname = InetAddress.getLocalHost().getCanonicalHostName();
-        this.processThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+        this.listenerThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+        this.workerThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
         this.taskAssignmentSocket = new ServerSocket(Config.TCP_TASK_ASSIGNMENT_PORT);
         this.taskAssignmentListenerThread = Executors.newSingleThreadExecutor();
+        this.failureHandlerThread = Executors.newSingleThreadExecutor();
         this.isCraneRunning = true;
+        this.onProcessingJobs = new HashSet<>();
         this.taskLocationMap = new HashMap<>();
         this.taskTypeMap = new HashMap<>();
+        this.workingNodes = new HashSet<>();
         initialMainThreadsJob();
     }
 
@@ -71,12 +81,54 @@ public class CraneNode {
             while (this.isCraneRunning) {
                 try {
                     if (this.taskAssignmentSocket.isClosed()) continue;
-                    this.processThread.submit(this.taskListener(this.taskAssignmentSocket.accept()));
+                    this.listenerThread.submit(this.taskListener(this.taskAssignmentSocket.accept()));
                 } catch (IOException e) {
                     logger.error("Task assignment socket failed", e);
                 }
             }
         });
+
+        this.failureHandlerThread.submit(() -> {
+            while (true) {
+                if (!this.fNode.leaderFailureHandledSet.isEmpty() && this.fNode.node.getLeader().equals(this.fNode.node.getHostName())) {
+                    logger.info("Crane master captured failure");
+                    Set<String> failedHosts = new HashSet(this.fNode.leaderFailureHandledSet.keySet());
+                    logger.info(Integer.toString(failedHosts.size()));
+                    //sleep 10 seconds for SDFS file recovery
+                    Util.noExceptionSleep(10000);
+                    // read the backup first
+                    this.readBackup();
+                    //check whether working nodes failed. replay the job if so.
+                    for (String failedHost : failedHosts) {
+                        if (workingNodes.contains(failedHost)) {
+                            //stop the job
+                            for (String host : workingNodes) {
+                                try {
+                                    if (!failedHosts.contains(host)) {
+                                        sendTaskMessageViaSocket(Util.connectToServer(host, Config.TCP_TASK_ASSIGNMENT_PORT), new TaskMessage("kill", "", "", "", "", 0));
+                                        logger.info("kill sent to <{}>", host);
+                                    }
+                                } catch (IOException e) {
+                                    logger.error("Failed to send stop message");
+                                }
+                            }
+                            //clear all the jobs information and replay all the jobs
+                            logger.info("restart all the jobs");
+                            Set<String> oldJobs = new HashSet<>(this.onProcessingJobs);
+                            this.onProcessingJobs.clear();
+                            this.workingNodes.clear();
+                            this.taskLocationMap.clear();
+                            this.taskTypeMap.clear();
+                            for(String job: oldJobs){
+                                execute(job);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+        });
+
     }
 
     /**
@@ -91,6 +143,7 @@ public class CraneNode {
             this.fNode.get(topofile, topofile);
             this.hosts = this.fNode.node.getNodesArray();
             this.hostIndexToAssignTask = 0;
+            this.onProcessingJobs.add(topofile);
             try (BufferedReader br = new BufferedReader(new FileReader(Config.GET_PATH + "/" + topofile))) {
                 String line;
                 //parse the file line by line - taskType # src # taskName # dest # object # numOfThreads
@@ -123,7 +176,7 @@ public class CraneNode {
                 logger.error("Failed to open file", e);
             }
             //master backup
-            this.masterBackup();
+            this.writeBackup();
         } else { //ask master to assign the tasks
             try {
                 TaskMessage msg = new TaskMessage("assignment", topofile, "", "", "", 0);
@@ -134,6 +187,22 @@ public class CraneNode {
             } catch (IOException e) {
                 logger.error("Failed to connected to master", e);
             }
+        }
+    }
+
+    /**
+     * stop the crane node
+     */
+    public void stopServer() {
+        this.isCraneRunning = false;
+        this.taskAssignmentListenerThread.shutdown();
+        this.failureHandlerThread.shutdown();
+        this.listenerThread.shutdown();
+        this.taskAssignmentListenerThread.shutdown();
+        try {
+            this.taskAssignmentSocket.close();
+        } catch (IOException e) {
+            logger.error("Server socket failed to close", e);
         }
     }
 
@@ -153,7 +222,7 @@ public class CraneNode {
                 TaskMessage task = TaskMessage.parseFromStream(in);
 
                 //for test
-/*                logger.info(
+              /* logger.info(
                         "Task received.\n" +
                                 "type: <{}>\n" +
                                 "src: <{}>\n" +
@@ -161,15 +230,21 @@ public class CraneNode {
                                 "dest: <{}>\n" +
                                 "obj: <{}>\n" +
                                 "port: <{}>",
-                        task.getType(), task.getSrc(), task.getName(), task.getDest(), task.getObject(), task.getPort());*/
-
+                        task.getType(), task.getSrc(), task.getName(), task.getDest(), task.getObject(), task.getPort());
+*/
                 AckMessage ack = new AckMessage(UUID.randomUUID(), true);
                 //master receive the assignment request, call the execute again to assign the tasks
                 if (task.getType().equals("assignment")) {
                     execute(task.getSrc());
                     sendAckMessageViaStream(out, ack);
                 } else if (task.getType().equals("spout") || task.getType().equals("bolt") || task.getType().equals("sink")) {
-                    this.processThread.submit(this.worker(task, out));
+                    this.workerThread.submit(this.worker(task, out));
+                } else if (task.getType().equals("kill")) {
+                    logger.info("<{}> received kill", this.serverHostname);
+                    this.workerThread.shutdown();
+                    this.workerThread = Executors.newFixedThreadPool(Config.NUM_CORES * 2);
+                    logger.info("New thread pool assigned");
+                    sendAckMessageViaStream(out, ack);
                 } else {
                     logger.error("Unknown task type received", task.getType());
                 }
@@ -217,9 +292,9 @@ public class CraneNode {
                         }
                     }
                     sendAckMessageViaStream(out, ack);
-                    if (destSocket != null){
-                        taskExecutor = new TaskExecutor(null, destSocket, task.getType(), task.getName());
-                    } else{
+                    if (destSocket != null) {
+                        taskExecutor = new TaskExecutor(null, destSocket, task.getType(), task.getName(), task.getObject());
+                    } else {
                         logger.error("Socket connection error");
                     }
                     break;
@@ -237,16 +312,16 @@ public class CraneNode {
                                 destServerSocket = new ServerSocket(thisPort);
                                 if (destServerSocket.isClosed()) continue;
                                 destSocket = destServerSocket.accept();
-                                logger.info("Stream connection from <{}> to <{}> set up", task.getDest(), task.getName());
+                                logger.info("Stream connection from <{}> to <{}> set up", task.getDest(), task.getName(), task.getObject());
                                 break;
                             } catch (IOException e) {
                                 logger.error("<{}> at <{}> failed to listen on port <{}>", task.getName(), this.serverHostname, thisPort, e);
                             }
                         }
                         sendAckMessageViaStream(out, ack);
-                        if (destSocket != null && sourceSocket != null){
-                            taskExecutor = new TaskExecutor(sourceSocket, destSocket, task.getType(), task.getName());
-                        } else{
+                        if (destSocket != null && sourceSocket != null) {
+                            taskExecutor = new TaskExecutor(sourceSocket, destSocket, task.getType(), task.getName(), task.getObject());
+                        } else {
                             logger.error("Socket connection error");
                         }
                     } catch (IOException e) {
@@ -262,9 +337,9 @@ public class CraneNode {
                         logger.info("<{}> trying to connect to <{}> at port <{}>", task.getName(), sourceHost, sourcePort);
                         sourceSocket = Util.connectToServer(sourceHost, sourcePort);
                         sendAckMessageViaStream(out, ack);
-                        if (sourceSocket != null){
-                            taskExecutor = new TaskExecutor(sourceSocket, null, task.getType(), task.getName());
-                        } else{
+                        if (sourceSocket != null) {
+                            taskExecutor = new TaskExecutor(sourceSocket, null, task.getType(), task.getName(), task.getObject());
+                        } else {
                             logger.error("Socket connection error");
                         }
                         break;
@@ -296,7 +371,6 @@ public class CraneNode {
             // Output goes first or the input will block forever
             ObjectOutputStream out = new ObjectOutputStream(new BufferedOutputStream(s.getOutputStream()));
             ObjectInputStream in = new ObjectInputStream(new BufferedInputStream(s.getInputStream()));
-
             out.writeObject(tm);
             out.flush();
             // Some blocking here for sure
@@ -353,6 +427,7 @@ public class CraneNode {
             //for simplicity just let each task listen on a distinct port
             String hostPlusPort = host + "+" + Integer.toString(this.nextPortToAssign);
             this.taskTypeMap.put(taskName, taskType);
+            this.workingNodes.add(host);
             logger.info("Task <{}> assigned to <{}>", taskName, hostPlusPort);
             switch (taskType) {
                 case "spout":
@@ -383,11 +458,11 @@ public class CraneNode {
     /**
      * Master backup all the tasks information when all tasks start
      */
-    private void masterBackup(){
-        JobBackup backup = new JobBackup(this.nextPortToAssign, this.taskLocationMap, this.taskTypeMap);
+    private void writeBackup() {
+        JobBackup backup = new JobBackup(this.nextPortToAssign, this.taskLocationMap, this.taskTypeMap, this.workingNodes, this.onProcessingJobs);
         try {
             backup.writeToSDFS(Config.JOB_BACKUP_NAME, this.fNode);
-        } catch (IOException e){
+        } catch (IOException e) {
             logger.error("Master failed to backup", e);
         }
     }
@@ -395,19 +470,21 @@ public class CraneNode {
     /**
      * New master read all tasks information from ths SDFS
      */
-    private void readBackup(){
-        try{
+    private void readBackup() {
+        try {
             JobBackup backup = JobBackup.readFromSDFS(Config.JOB_BACKUP_NAME, this.fNode);
-            if(backup != null){
+            if (backup != null) {
                 this.taskTypeMap = backup.getTaskTypeMap();
                 this.taskLocationMap = backup.getTaskLocationMap();
                 this.nextPortToAssign = backup.getNextPortToAssign();
-            } else{
+                this.workingNodes = backup.getWorkingNodes();
+                this.onProcessingJobs = backup.getOnProcessingJobs();
+            } else {
                 logger.error("Null backup");
             }
-        } catch (IOException e){
+        } catch (IOException e) {
             logger.error("Failed to read <{}> from SDFS", Config.JOB_BACKUP_NAME, e);
-        } catch (ClassNotFoundException e){
+        } catch (ClassNotFoundException e) {
             logger.error("Backup malformed", e);
         }
     }

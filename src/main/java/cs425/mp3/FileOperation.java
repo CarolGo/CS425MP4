@@ -42,7 +42,7 @@ public final class FileOperation {
     private ConcurrentHashMap<String, List<FileObject>> sdfsFileMap = new ConcurrentHashMap<>();
 
     // Failure cached queue
-    private ConcurrentHashMap<String, String> leaderFailureHandledSet = new ConcurrentHashMap<>();
+    public ConcurrentHashMap<String, String> leaderFailureHandledSet = new ConcurrentHashMap<>();
 
     public FileOperation(Node n) throws IOException {
         this.node = n;

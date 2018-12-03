@@ -1,5 +1,7 @@
 package cs425.crane.task;
 
+import cs425.crane.message.Tuple;
+
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.Serializable;
@@ -19,8 +21,9 @@ public interface Spout extends Serializable {
 
     /**
      * Called by crane to generate new tuple.
+     * @return Tuple that generated.
      */
-    void nextTuple();
+    Tuple nextTuple();
 
     /**
      * Called when a Tuple is fully processed.

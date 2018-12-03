@@ -12,7 +12,7 @@ public class JavaClassLoader extends ClassLoader {
         try {
             // Create a new JavaClassLoader
             ClassLoader classLoader = this.getClass().getClassLoader();
-
+            System.out.println(classBinName);
             // Load the target class using its binary name
             Class loadedMyClass = classLoader.loadClass(classBinName);
 

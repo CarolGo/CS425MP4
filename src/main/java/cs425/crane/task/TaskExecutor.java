@@ -1,6 +1,7 @@
 package cs425.crane.task;
 
 import cs425.Util;
+import cs425.crane.JavaClassLoader;
 import cs425.crane.message.AckMessage;
 import cs425.crane.message.Tuple;
 import org.slf4j.Logger;
@@ -9,7 +10,6 @@ import org.slf4j.LoggerFactory;
 import java.io.*;
 import java.net.Socket;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.UUID;
 import java.util.concurrent.*;
 
@@ -21,8 +21,9 @@ import java.util.concurrent.*;
 public class TaskExecutor {
     private final Logger logger = LoggerFactory.getLogger(TaskExecutor.class);
 
-    private Socket inputSocket;
-    private Socket outputSocket;
+    private final Socket inputSocket;
+    private final Socket outputSocket;
+    private final Object taskObject;
     private ObjectOutputStream TupleOutputStream;
     private ObjectInputStream TupleInputStream;
     private ObjectOutputStream AckMessageOutputStream;
@@ -35,9 +36,11 @@ public class TaskExecutor {
     private final ScheduledExecutorService replayer;
     private ConcurrentHashMap<UUID,Tuple> waitForAck;
 
-    public TaskExecutor(Socket in, Socket out, String taskType, String taskName){
+    public TaskExecutor(Socket in, Socket out, String taskType, String taskName, String object){
         this.inputSocket = in;
         this.outputSocket = out;
+        logger.info(object);
+        this.taskObject = (new JavaClassLoader()).createInstance("cs425.crane.applications." + object);
         this.taskType = taskType;
         this.taskName = taskName;
         this.waitForAck = new ConcurrentHashMap<>();
@@ -85,75 +88,113 @@ public class TaskExecutor {
 
     public void prepare(){
         this.timeOutPerTuple = 2;
-        initialAllThreads();
+        if(taskType.equals("spout")){
+            Spout spout = (Spout)this.taskObject;
+            spout.open();
+        } else if(taskType.equals("bolt")){
+            Bolt bolt = (Bolt)this.taskObject;
+            bolt.prepare();
+        } else if(taskType.equals("sink")){
+            Sink sink = (Sink)this.taskObject;
+            sink.prepare();
+        } else{
+            logger.error("Unknown task type");
+        }
+        //initialAllThreads();
     }
 
     public void execute(){
-
         if(this.taskType.equals("spout")){
-            Tuple out;
+            Spout spout = (Spout)this.taskObject;
+            Tuple outputTuple;
             try {
                 this.TupleOutputStream = new ObjectOutputStream(new BufferedOutputStream(this.outputSocket.getOutputStream()));
-                for (int i = 0; i < 10; i ++){
-                    out = new Tuple(UUID.randomUUID(), new Integer(i));
-                    this.sendTupleToStream(this.TupleOutputStream, out);
-                    this.waitForAck.put(out.getId(), out);
-                    logger.info("Tuple send out");
-                    logger.info(out.getId().toString());
+                while((outputTuple = spout.nextTuple()) != null){
+                    sendTupleToStream(this.TupleOutputStream, outputTuple);
+                    if(outputTuple.getId() == null){
+                        this.cleanUp();
+                        logger.info("<{}> finished", this.taskName);
+                        return;
+                    }
+                    //this.waitForAck.put(outputTuple.getId(), outputTuple);
                 }
+                logger.info("null Tuple");
             } catch(IOException e){
-                logger.error("<{}> failed to handle Tuple", this.taskName, e);
+                logger.debug("<{}> failed to handle Tuple", this.taskName);
             }
         } else if(this.taskType.equals("bolt")){
-            Tuple in, out;
-            int count = 0;
+            Bolt bolt = (Bolt)this.taskObject;
+            Tuple inputTuple, outputTuple;
             try{
                 this.TupleOutputStream = new ObjectOutputStream(new BufferedOutputStream(this.outputSocket.getOutputStream()));
                 this.AckMessageOutputStream = new ObjectOutputStream(new BufferedOutputStream(this.inputSocket.getOutputStream()));
                 this.TupleInputStream = new ObjectInputStream(new BufferedInputStream(this.inputSocket.getInputStream()));
                 while(true){
-                    in = this.readTupleFromStream(this.TupleInputStream);
-                    count ++;
-                    logger.info("Tuple get");
-                    logger.info(in.getId().toString());
-                    ArrayList<Object> data = in.getData();
-                    out = new Tuple(in.getId(), data.get(0), new String("aaaaa"));
-                    if(in.getData().get(0).equals(2) && count < 15) continue;
-                    logger.info("Output Tuple created");
-                    this.sendTupleToStream(this.TupleOutputStream, out);
-                    this.waitForAck.put(out.getId(), out);
-                    logger.info("Tuple send out");
-                    //finish process the tuple send ackBack
-                    AckMessage ack = new AckMessage(in.getId(), true);
-                    sendAckMessageToStream(this.AckMessageOutputStream,ack);
-                    logger.info("ack out");
+                    inputTuple = readTupleFromStream(this.TupleInputStream);
+                    bolt.process(inputTuple);
+                    while((outputTuple = bolt.nextTuple()) != null){
+                        sendTupleToStream(this.TupleOutputStream, outputTuple);
+                        if(outputTuple.getId() == null){
+                            this.cleanUp();
+                            logger.info("<{}> finished", this.taskName);
+                            return;
+                        }
+                        //this.waitForAck.put(outputTuple.getId(), outputTuple);
+                    }
                 }
             } catch(IOException e){
-                logger.error("<{}> failed to handle Tuple", this.taskName, e);
+                logger.debug("<{}> failed to handle Tuple", this.taskName);
             }
         } else if(this.taskType.equals("sink")){
-            Tuple in;
+            Sink sink = (Sink)this.taskObject;
+            Tuple inputTuple;
             try{
                 this.AckMessageOutputStream = new ObjectOutputStream(new BufferedOutputStream(this.inputSocket.getOutputStream()));
                 this.TupleInputStream = new ObjectInputStream(new BufferedInputStream(this.inputSocket.getInputStream()));
                 while(true){
-                    in = this.readTupleFromStream(this.TupleInputStream);
-                    logger.info("Tuple get");
-                    logger.info(in.getId().toString());
-                    ArrayList<Object> data = in.getData();
-                    logger.info(Integer.toString(data.size()));
-                    logger.info(data.get(0).toString());
-                    logger.info(data.get(1).toString());
-                    //finish process the tuple send ackBack
-                    AckMessage ack = new AckMessage(in.getId(), true);
-                    sendAckMessageToStream(this.AckMessageOutputStream,ack);
-                    logger.info("ack out");
+                    inputTuple = readTupleFromStream(this.TupleInputStream);
+                    if(inputTuple.getId() == null){
+                        this.cleanUp();
+                        logger.info("<{}> finished", this.taskName);
+                        return;
+                    }
+                    sink.process(inputTuple);
+
                 }
             } catch(IOException e){
-                logger.error("<{}> failed to handle Tuple", this.taskName, e);
+                logger.debug("<{}> failed to handle Tuple", this.taskName);
             }
         }
     }
+
+    public void cleanUp(){
+        try{
+            if(taskType.equals("spout")){
+                Spout spout = (Spout)this.taskObject;
+                spout.close();
+            } else if(taskType.equals("bolt")){
+                Bolt bolt = (Bolt)this.taskObject;
+                bolt.cleanUp();
+            } else if(taskType.equals("sink")){
+                Sink sink = (Sink)this.taskObject;
+                sink.cleanUp();
+            } else{
+                logger.error("Unknown task type");
+            }
+            this.ackHandler.shutdown();
+            this.replayer.shutdown();
+            if(this.inputSocket != null){
+                this.inputSocket.close();
+            }
+            if(this.outputSocket != null){
+                this.outputSocket.close();
+            }
+            logger.info("Task executor finished");
+        } catch(IOException e){
+            logger.error("Failed to close the task executor sockets");
+        }
+    }
+
 
     /**
      * Read a Tuple from the given ObjectInputStream.
@@ -214,15 +255,8 @@ public class TaskExecutor {
         return inputSocket;
     }
 
-    public void setInputSocket(Socket inputSocket) {
-        this.inputSocket = inputSocket;
-    }
-
     public Socket getOutputSocket() {
         return outputSocket;
     }
 
-    public void setOutputSocket(Socket outputSocket) {
-        this.outputSocket = outputSocket;
-    }
 }

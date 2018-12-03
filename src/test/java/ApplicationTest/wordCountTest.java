@@ -1,9 +1,9 @@
 package ApplicationTest;
 
 
-import cs425.crane.applications.wordCount.CountSink;
-import cs425.crane.applications.wordCount.ReadLineSpout;
-import cs425.crane.applications.wordCount.SplitFilterBolt;
+import cs425.crane.applications.CountSink;
+import cs425.crane.applications.ReadLineSpout;
+import cs425.crane.applications.SplitFilterBolt;
 import cs425.crane.message.Tuple;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
@@ -20,6 +20,7 @@ public class wordCountTest {
         }
     }
     @Test
+    @Disabled
     void AllTogetherTest(){
         ReadLineSpout RLS = new ReadLineSpout();
         SplitFilterBolt SB = new SplitFilterBolt();

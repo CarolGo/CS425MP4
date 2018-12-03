@@ -1,4 +1,4 @@
-package cs425.crane.applications.wordCount;
+package cs425.crane.applications;
 
 import cs425.crane.message.Tuple;
 import cs425.crane.task.Bolt;
@@ -7,11 +7,11 @@ import org.slf4j.LoggerFactory;
 
 import java.util.*;
 
-public class SplitBolt implements Bolt {
+public class SplitFilterBolt implements Bolt {
 
 
     private List<Tuple> TupleToSend;
-    private final Logger logger = LoggerFactory.getLogger(SplitBolt.class);
+    private final Logger logger = LoggerFactory.getLogger(SplitFilterBolt.class);
     private Set<String> wordsWeWant;
     private int i;
 
@@ -50,9 +50,6 @@ public class SplitBolt implements Bolt {
         if(this.TupleToSend.size() > 0){
             Tuple t = this.TupleToSend.get(0);
             this.TupleToSend.remove(0);
-            if(i % 10000 == 0){
-                logger.info(Integer.toString(i));
-            }
             i ++;
             return t;
         } else{

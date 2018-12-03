@@ -13,16 +13,22 @@ public interface Bolt extends Serializable {
     void prepare();
 
     /**
-     * Called by crane to process a new tuple.
+     * Called by crane to process a received tuple.
      *
      * @param tuple
      */
-    void execute(Tuple tuple);
+    void process(Tuple tuple);
 
     /**
      * called when a Bolt task is going to be shotdown.
      */
     void cleanUp();
+
+    /**
+     * Called by crane to generate new tuple.
+     * @return Tuple that generated
+     */
+    Tuple nextTuple();
 
     static Bolt parseFromStream(ObjectInputStream in) throws IOException, ClassNotFoundException {
         Object o = in.readObject();

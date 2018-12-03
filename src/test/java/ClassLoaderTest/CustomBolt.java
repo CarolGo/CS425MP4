@@ -13,7 +13,7 @@ public class CustomBolt implements Bolt{
     }
 
     @Override
-    public void execute(Tuple t){
+    public void process(Tuple t){
         //Whatever user input
         System.out.println(t.getId());
         System.out.println("In execute now");
@@ -23,5 +23,11 @@ public class CustomBolt implements Bolt{
     public void cleanUp(){
         //Whatever user input
         System.out.println("In cleanUp now");
+    }
+
+    @Override
+    public Tuple nextTuple(){
+        //Whatever user input
+        return null;
     }
 }
