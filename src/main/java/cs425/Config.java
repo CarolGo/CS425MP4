@@ -21,8 +21,8 @@ public final class Config {
     /**
      * TCP port for crane tasks
      */
-    public static final int TCP_TASK_ASSIGNMENT_PORT = 8081;
-    public static final int TCP_TUPLE_TRANS_BASE_PORT = 8082;
+    public static final int TCP_TASK_ASSIGNMENT_PORT = 7071;
+    public static final int TCP_TUPLE_TRANS_BASE_PORT = 7072;
     public static final int TCP_TUPLE_ACK_PORT = 9082;
 
 

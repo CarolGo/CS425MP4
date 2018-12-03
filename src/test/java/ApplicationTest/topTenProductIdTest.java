@@ -8,7 +8,6 @@ import org.junit.jupiter.api.Test;
 
 public class topTenProductIdTest {
     @Test
-    @Disabled
     void AllTogetherTest(){
         ReadLineAsinSpout RLS = new ReadLineAsinSpout();
         TopTenSink CS = new TopTenSink();

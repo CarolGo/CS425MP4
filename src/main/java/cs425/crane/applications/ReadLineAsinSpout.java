@@ -1,5 +1,6 @@
 package cs425.crane.applications;
 
+import cs425.Util;
 import cs425.crane.message.Tuple;
 import cs425.crane.task.Spout;
 import org.json.JSONObject;
@@ -44,6 +45,7 @@ public class ReadLineAsinSpout implements Spout {
                 t = new Tuple(UUID.randomUUID(), jsonObject.getString("asin"));
             }
             if(i % 10000 == 0){
+                Util.noExceptionSleep(2000);
                 logger.info("Spout has generate <{}> Tuples", Integer.toString(i));
             }
             i ++;

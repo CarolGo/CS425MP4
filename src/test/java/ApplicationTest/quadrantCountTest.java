@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 
 public class quadrantCountTest {
     @Test
+    @Disabled
     void AllTogetherTest(){
         ReadLineXYSpout RLS = new ReadLineXYSpout();
         QuadrantCountSink CS = new QuadrantCountSink();

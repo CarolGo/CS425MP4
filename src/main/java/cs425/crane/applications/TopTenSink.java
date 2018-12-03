@@ -1,5 +1,6 @@
 package cs425.crane.applications;
 
+import cs425.Util;
 import cs425.crane.message.Tuple;
 import cs425.crane.task.Sink;
 import org.slf4j.Logger;
@@ -59,6 +60,7 @@ public class TopTenSink implements Sink {
 
     private void printTopTen(){
         this.topTen.clear();
+        Util.noExceptionSleep(1000);
         Set<Entry<String, Integer>> set = this.wordFrequeny.entrySet();
         List<Entry<String, Integer>> list = new ArrayList(set);
         Collections.sort(list, new Comparator<Entry<String, Integer>>() {
